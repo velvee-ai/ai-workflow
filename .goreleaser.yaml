@@ -1,0 +1,128 @@
+# GoReleaser configuration for Homebrew distribution
+# Documentation: https://goreleaser.com
+
+version: 2
+
+before:
+  hooks:
+    # Ensure dependencies are up to date
+    - go mod tidy
+    - go mod download
+
+builds:
+  - id: work
+    binary: work
+    main: ./main.go
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+    goarch:
+      - amd64  # Intel Macs
+      - arm64  # Apple Silicon (M1/M2/M3)
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: ai-workflow-archive
+    format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+    files:
+      - README.md
+      - LICENSE*
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - Merge pull request
+      - Merge branch
+
+# Homebrew tap configuration
+brews:
+  - name: work
+    repository:
+      owner: velvee-ai
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+
+    # Optionally set a custom download strategy
+    download_strategy: CurlDownloadStrategy
+
+    # Git author used to commit to the tap
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+
+    # Folder inside the repository to put the formula
+    directory: Formula
+
+    homepage: "https://github.com/velvee-ai/ai-workflow"
+    description: "Work - A CLI tool with git worktree management for parallel branch development"
+
+    # License
+    license: "MIT"
+
+    # Install configuration
+    install: |
+      bin.install "work"
+
+    # Test configuration
+    test: |
+      system "#{bin}/work", "--help"
+
+    # Dependencies (if any)
+    # dependencies:
+    #   - name: git
+    #   - name: awscli
+
+# Release configuration
+release:
+  github:
+    owner: velvee-ai
+    name: ai-workflow
+
+  draft: false
+  prerelease: auto
+  mode: append
+
+  header: |
+    ## Work {{ .Tag }} Release
+
+    Welcome to this new release of Work CLI!
+
+  footer: |
+    ## Installation
+
+    ### Homebrew (macOS)
+    ```bash
+    brew tap velvee-ai/tap
+    brew install work
+    ```
+
+    ### Manual Installation
+    Download the appropriate archive for your system below.
+
+# Announce (optional - can add Discord/Slack/Twitter notifications)
+# announce:
+#   discord:
+#     enabled: true
+#     message_template: 'New release: {{ .ProjectName }} {{ .Tag }} is out!'

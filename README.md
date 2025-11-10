@@ -1,0 +1,445 @@
+# Work CLI
+
+A powerful CLI tool for orchestrating git workflows, featuring git worktree management for parallel branch development, intelligent autocomplete, and streamlined PR creation.
+
+## Features
+
+- **Git Worktree Management** - Work on multiple branches simultaneously without switching
+- **Intelligent Autocomplete** - Repository and branch suggestions with caching for speed
+- **Streamlined PR Workflow** - One command to commit, push, and create pull requests
+- **Setup Wizard** - Interactive configuration on first run
+- **Health Checks** - Verify your environment with `work doctor`
+- **IDE Integration** - Automatic workspace opening in VSCode or Cursor
+- **GitHub Organization Support** - Filter repos by your preferred GitHub organizations
+- **Configuration System** - Flexible settings for customizing your workflow
+- **Shell Completion** - Tab completion for Bash, Zsh, Fish, and PowerShell
+
+## Project Structure
+
+```
+.
+├── main.go              # Entry point
+├── cmd/
+│   ├── root.go          # Root command and CLI setup
+│   ├── checkout.go      # Git worktree checkout commands with autocomplete
+│   ├── commit.go        # Streamlined commit and PR creation
+│   ├── config.go        # Configuration management
+│   ├── setup.go         # Setup wizard and health check (doctor)
+│   ├── remote.go        # Open repository in browser
+│   ├── completion.go    # Shell completion generation
+│   ├── cache_clear.go   # Cache management
+│   └── git.go           # Basic git operations
+├── pkg/
+│   └── config/          # Configuration system
+├── go.mod               # Go module definition
+├── .goreleaser.yml      # Release automation
+└── README.md
+```
+
+## Installation
+
+### Homebrew (macOS - Recommended)
+
+```bash
+# Add the tap
+brew tap velvee-ai/tap
+
+# Install
+brew install work
+
+# Verify installation
+work --version
+```
+
+### Build from Source
+
+**Prerequisites:**
+
+- Go 1.21 or later
+- Git (for git commands and checkout workflow)
+- GitHub CLI (`gh`) - Optional, required for GitHub issue integration and PR creation
+
+```bash
+# Clone the repository
+git clone https://github.com/velvee-ai/ai-workflow.git
+cd ai-workflow
+
+# Build
+go build -o work
+
+# Or install globally
+go install
+```
+
+## Quick Start
+
+After installation, run the setup wizard to configure your environment:
+
+```bash
+# Interactive setup wizard
+work setup
+
+# Verify everything is working
+work doctor
+```
+
+## Usage
+
+### Help
+
+```bash
+# Show all available commands
+work --help
+
+# Show help for specific command
+work git --help
+work checkout --help
+work config --help
+```
+
+### Configuration
+
+The CLI uses a configuration file to store your preferences. You can manage settings with the `config` command:
+
+```bash
+# List all settings
+work config list
+
+# Get a specific setting
+work config get default_git_folder
+
+# Set a setting
+work config set default_git_folder ~/git
+work config set preferred_orgs '["myorg","other-org"]'
+work config set preferred_ide cursor
+
+# Show config file path
+work config path
+```
+
+**Available Settings:**
+
+- `default_git_folder` - Where to clone repositories (e.g., `~/git`)
+- `preferred_orgs` - GitHub organizations to filter in autocomplete (JSON array)
+- `preferred_ide` - IDE to open after checkout (`vscode`, `cursor`, or `none`)
+- `default_remote` - Default git remote name (default: `origin`)
+
+### Setup and Health Check
+
+```bash
+# Run interactive setup wizard
+work setup
+
+# Check your environment and configuration
+work doctor
+```
+
+The `doctor` command verifies:
+
+- Git installation
+- GitHub CLI (`gh`) installation and authentication
+- Default git folder exists and is writable
+- GitHub organization access
+- IDE availability
+
+### Git Commands
+
+```bash
+# Show git status
+work git status
+
+# List all branches
+work git branch
+```
+
+### Checkout Commands (Git Worktree Workflow)
+
+The checkout commands provide a powerful workflow for managing multiple branches using git worktrees, with intelligent autocomplete for repositories and branches:
+
+```bash
+# Clone a repository into structured layout
+work checkout root https://github.com/user/repo.git
+
+# This creates:
+# repo/
+#   └── main/  (cloned repository)
+
+# Create/switch to a branch worktree (with tab completion!)
+work checkout <TAB>        # Lists your repos from preferred orgs
+work checkout myrepo <TAB>  # Lists branches in that repo
+
+# Examples:
+work checkout myrepo feature-123
+work checkout myrepo main
+
+# Create branch from GitHub issue
+work checkout https://github.com/user/repo/issues/42
+
+# This will:
+# - Create a branch from the issue (using gh CLI)
+# - Assign the issue to you
+# - Create a worktree in default_git_folder/repo/branch-name/
+# - Open in your configured IDE (if set)
+```
+
+**Autocomplete Features:**
+
+- Repository names from your configured GitHub organizations
+- Branch names for the selected repository
+- Caching for fast responses (5-minute TTL)
+- Use `work cache-clear checkout` to force refresh
+
+**Benefits of this workflow:**
+
+- Work on multiple branches simultaneously without switching
+- Each branch has its own working directory
+- No need to stash changes when switching branches
+- Run tests in one branch while developing in another
+- Automatic IDE integration for seamless development
+- Smart autocomplete saves typing and prevents errors
+
+### Commit and PR Creation
+
+Streamline your git workflow with a single command that handles everything from commit to PR creation:
+
+```bash
+# Add, commit, pull, push, and create PR in one command
+work commit "Add new feature"
+work commit "Fix authentication bug"
+```
+
+This command automatically:
+
+1. Runs `git add .`
+2. Creates a commit with your message
+3. Pulls with rebase to stay up-to-date
+4. Pushes to remote (with retry logic for network issues)
+5. Creates a GitHub pull request using `gh` CLI
+
+**Features:**
+
+- Automatic PR title and body generation from commits
+- Exponential backoff retry for push failures (4 attempts)
+- Helpful error messages if `gh` CLI is not installed
+- Handles upstream branch tracking automatically
+
+### Open Repository in Browser
+
+Quickly open your repository in a web browser:
+
+```bash
+# Open the current repository in your browser
+work remote
+```
+
+**Features:**
+
+- Automatically detects git remote URL
+- Converts SSH and HTTPS URLs to browser-friendly format
+- Works with any git hosting service (GitHub, GitLab, Bitbucket, etc.)
+- Configurable default remote via `work config set default_remote <name>`
+
+### Cache Management
+
+Control the autocomplete cache for repositories and branches:
+
+```bash
+# Clear cache and fetch fresh data
+work cache-clear checkout myrepo branch-name
+
+# Or just clear the cache
+work cache-clear checkout <TAB>  # Autocomplete with fresh data
+```
+
+The autocomplete system caches repository and branch lists for 5 minutes to provide fast responses. Use `cache-clear` when you need to see newly created repositories or branches immediately.
+
+### Shell Completion
+
+Enable tab completion for your shell:
+
+```bash
+# Bash
+work completion bash > /etc/bash_completion.d/work
+
+# Zsh
+work completion zsh > "${fpath[1]}/_work"
+
+# Fish
+work completion fish > ~/.config/fish/completions/work.fish
+
+# PowerShell
+work completion powershell > work.ps1
+```
+
+See `work completion --help` for detailed installation instructions for each shell.
+
+## Adding New Commands
+
+Cobra makes it easy to add new commands:
+
+1. Create a new file in `cmd/` directory (e.g., `cmd/mycommand.go`)
+2. Define your command using `cobra.Command`
+3. Add it to the root command in the `init()` function
+
+Example:
+
+```go
+package cmd
+
+import (
+    "fmt"
+    "github.com/spf13/cobra"
+)
+
+var myCmd = &cobra.Command{
+    Use:   "mycommand",
+    Short: "Description of my command",
+    Run: func(cmd *cobra.Command, args []string) {
+        fmt.Println("Hello from my command!")
+    },
+}
+
+func init() {
+    rootCmd.AddCommand(myCmd)
+}
+```
+
+## Advanced Features
+
+### Configuration File
+
+The CLI stores configuration in `~/.work/config.json` (or `$XDG_CONFIG_HOME/work/config.json` on Linux). This file is automatically created on first run or when you use `work setup`.
+
+### GitHub Integration
+
+The tool integrates with GitHub in several ways:
+
+- Uses `gh` CLI for issue-based branch creation
+- Fetches repository lists from your configured organizations
+- Creates pull requests automatically with the `commit` command
+- Supports both SSH and HTTPS git URLs
+
+### IDE Integration
+
+After checking out a branch, the tool can automatically open your IDE:
+
+- **VSCode**: Opens workspace with `code <path>`
+- **Cursor**: Opens workspace with `cursor <path>`
+- **None**: Skip IDE integration
+
+Configure your preference with:
+
+```bash
+work config set preferred_ide cursor
+```
+
+### Caching Strategy
+
+To provide fast autocomplete while keeping data fresh:
+
+- Repository lists are cached for 5 minutes
+- Branch lists are cached per-repository for 5 minutes
+- Use `work cache-clear checkout` to force refresh
+- Cache is stored in memory (cleared on exit)
+
+## Contributing
+
+### Adding New Commands
+
+Cobra makes it easy to add new commands:
+
+1. Create a new file in `cmd/` directory (e.g., `cmd/mycommand.go`)
+2. Define your command using `cobra.Command`
+3. Add it to the root command in the `init()` function
+4. Add autocomplete if needed using `ValidArgsFunction`
+
+Example:
+
+```go
+package cmd
+
+import (
+    "fmt"
+    "github.com/spf13/cobra"
+)
+
+var myCmd = &cobra.Command{
+    Use:   "mycommand",
+    Short: "Description of my command",
+    Run: func(cmd *cobra.Command, args []string) {
+        fmt.Println("Hello from my command!")
+    },
+}
+
+func init() {
+    rootCmd.AddCommand(myCmd)
+}
+```
+
+### Features of Cobra Framework
+
+- **Automatic help generation**: `-h` and `--help` flags automatically
+- **Nested subcommands**: Commands can have subcommands (e.g., `git status`)
+- **Flags support**: Persistent and local flags with type safety
+- **Suggestions**: Automatic suggestions for mistyped commands
+- **Shell completions**: Bash, Zsh, Fish, PowerShell support
+- **Man pages**: Automatic generation
+
+## Command Reference
+
+Quick reference for all available commands:
+
+| Command                         | Description                                           |
+| ------------------------------- | ----------------------------------------------------- |
+| `work setup`                    | Interactive setup wizard for first-time configuration |
+| `work doctor`                   | Health check to verify your environment               |
+| `work config list`              | Show all configuration settings                       |
+| `work config get <key>`         | Get a specific configuration value                    |
+| `work config set <key> <value>` | Set a configuration value                             |
+| `work config path`              | Show configuration file path                          |
+| `work checkout <repo> <branch>` | Checkout or create a git worktree (with autocomplete) |
+| `work checkout root <url>`      | Clone a repository with worktree-ready structure      |
+| `work checkout <issue-url>`     | Create branch from GitHub issue                       |
+| `work commit <message>`         | Add, commit, pull, push, and create PR                |
+| `work remote`                   | Open repository in browser                            |
+| `work cache-clear checkout`     | Clear autocomplete cache and checkout                 |
+| `work completion <shell>`       | Generate shell completion script                      |
+| `work git status`               | Show git status                                       |
+| `work git branch`               | List git branches                                     |
+
+## Development
+
+```bash
+# Run without building
+go run main.go [command]
+
+# Run tests (when added)
+go test ./...
+
+# Format code
+go fmt ./...
+```
+
+## Releases
+
+This project uses [GoReleaser](https://goreleaser.com/) for automated releases to Homebrew.
+
+### Creating a Release
+
+1. Create and push a version tag:
+
+   ```bash
+   git tag -a v1.0.0 -m "Release v1.0.0"
+   git push origin v1.0.0
+   ```
+
+2. GitHub Actions automatically:
+   - Builds binaries for macOS (Intel & Apple Silicon)
+   - Creates a GitHub Release
+   - Updates the Homebrew tap
+
+See [RELEASE.md](RELEASE.md) for detailed release instructions.
+
+## License
+
+MIT License - see [LICENSE](LICENSE) file for details.
