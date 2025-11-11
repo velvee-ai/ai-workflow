@@ -4,15 +4,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/viper"
 )
 
 // Config holds all configuration settings
 type Config struct {
-	DefaultGitFolder  string   `mapstructure:"default_git_folder"`
-	PreferredOrgs     []string `mapstructure:"preferred_orgs"`
-	PreferredIDE      string   `mapstructure:"preferred_ide"`
+	DefaultGitFolder   string   `mapstructure:"default_git_folder" json:"default_git_folder"`
+	PreferredOrgs      []string `mapstructure:"preferred_orgs" json:"preferred_orgs"`
+	PreferredIDE       string   `mapstructure:"preferred_ide" json:"preferred_ide"`
+	DefaultRemote      string   `mapstructure:"default_remote" json:"default_remote"`
+	CheckoutBaseBranch string   `mapstructure:"checkout_base_branch" json:"checkout_base_branch"`
+	CacheTTL           string   `mapstructure:"cache_ttl" json:"cache_ttl"` // Duration string like "5m"
 }
 
 var (
@@ -63,8 +67,10 @@ func setDefaults() {
 	defaultGitFolder := filepath.Join(homeDir, "git")
 	viper.SetDefault("default_git_folder", defaultGitFolder)
 	viper.SetDefault("preferred_orgs", []string{"myorg"})
-	viper.SetDefault("preferred_ide", "none") // Options: "vscode", "cursor", "none"
+	viper.SetDefault("preferred_ide", "none")    // Options: "vscode", "cursor", "none"
 	viper.SetDefault("default_remote", "origin") // Default git remote name
+	viper.SetDefault("checkout_base_branch", "main")
+	viper.SetDefault("cache_ttl", "5m") // 5 minutes
 }
 
 // GetConfigDir returns the configuration directory path
@@ -96,8 +102,63 @@ func Get() (*Config, error) {
 
 // Set sets a configuration value and saves it
 func Set(key string, value interface{}) error {
+	if err := ensureConfigDir(); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
 	viper.Set(key, value)
 	return viper.WriteConfig()
+}
+
+// Save writes the current configuration to disk.
+func Save(cfg *Config) error {
+	if err := ensureConfigDir(); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	viper.Set("default_git_folder", cfg.DefaultGitFolder)
+	viper.Set("preferred_orgs", cfg.PreferredOrgs)
+	viper.Set("preferred_ide", cfg.PreferredIDE)
+	viper.Set("default_remote", cfg.DefaultRemote)
+	viper.Set("checkout_base_branch", cfg.CheckoutBaseBranch)
+	viper.Set("cache_ttl", cfg.CacheTTL)
+
+	return viper.WriteConfig()
+}
+
+// Update loads the config, applies a mutation function, and saves it.
+func Update(fn func(*Config) error) error {
+	cfg, err := Get()
+	if err != nil {
+		return err
+	}
+	if err := fn(cfg); err != nil {
+		return err
+	}
+	return Save(cfg)
+}
+
+// ExpandPath expands ~ to home directory and resolves relative paths.
+func ExpandPath(path string) (string, error) {
+	if path == "" {
+		return "", nil
+	}
+
+	// Expand ~
+	if strings.HasPrefix(path, "~/") {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("failed to get home directory: %w", err)
+		}
+		path = filepath.Join(homeDir, path[2:])
+	}
+
+	// Resolve to absolute path
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve absolute path: %w", err)
+	}
+
+	return absPath, nil
 }
 
 // GetString returns a string configuration value

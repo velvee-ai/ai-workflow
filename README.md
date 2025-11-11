@@ -20,7 +20,7 @@ A powerful CLI tool for orchestrating git workflows, featuring git worktree mana
 .
 ├── main.go              # Entry point
 ├── cmd/
-│   ├── root.go          # Root command and CLI setup
+│   ├── root.go          # Root command and CLI setup with services initialization
 │   ├── checkout.go      # Git worktree checkout commands with autocomplete
 │   ├── commit.go        # Streamlined commit and PR creation
 │   ├── config.go        # Configuration management
@@ -30,11 +30,45 @@ A powerful CLI tool for orchestrating git workflows, featuring git worktree mana
 │   ├── cache_clear.go   # Cache management
 │   └── git.go           # Basic git operations
 ├── pkg/
-│   └── config/          # Configuration system
+│   ├── cache/           # Generic TTL cache implementation
+│   ├── config/          # Configuration system with path expansion
+│   ├── gitexec/         # Context-aware git command runner
+│   ├── giturl/          # Git URL parsing utilities
+│   └── services/        # Application-wide service singleton
 ├── go.mod               # Go module definition
-├── .goreleaser.yml      # Release automation
+├── Makefile             # Build and test targets
+├── .goreleaser.yaml     # Release automation
 └── README.md
 ```
+
+## Architecture
+
+### Service Singleton Pattern
+
+The application uses a service singleton pattern to avoid global state and enable testability:
+
+```go
+// Initialize during startup (cmd/root.go)
+services.MustInit()
+
+// Access from commands
+svc := services.Get()
+gitRunner := svc.GitRunner
+cfg := svc.Config
+```
+
+Services are lazily initialized and include:
+- **Config**: Application configuration loaded from `~/.work/config.yaml`
+- **GitRunner**: Context-aware git command executor with timeouts
+- Future: WorktreeManager, CacheService, GitHubClient, etc.
+
+### Package Organization
+
+- **pkg/cache**: Thread-safe generic TTL cache with cleanup
+- **pkg/config**: Configuration loading, saving, and path expansion
+- **pkg/gitexec**: Git command execution with context support and structured results
+- **pkg/giturl**: Git URL parsing for SSH, HTTPS, and various formats
+- **pkg/services**: Application-wide service container
 
 ## Installation
 
@@ -409,15 +443,66 @@ Quick reference for all available commands:
 
 ## Development
 
+### Quick Start
+
+```bash
+# Clone the repository
+git clone https://github.com/velvee-ai/ai-workflow.git
+cd ai-workflow
+
+# Build the project
+make build
+
+# Run tests
+make test
+
+# Run tests with coverage
+make test-coverage
+
+# Format code
+make fmt
+
+# Run linters (requires golangci-lint)
+make lint
+
+# Clean build artifacts
+make clean
+```
+
+### Development Workflow
+
+1. **Make changes** to the code
+2. **Run tests** to ensure nothing breaks: `make test`
+3. **Format code**: `make fmt`
+4. **Build locally**: `make build`
+5. **Test manually**: `./work <command>`
+
+### Testing Philosophy
+
+- Unit tests for all `pkg/*` packages
+- Use table-driven tests for comprehensive coverage
+- Mock external dependencies (git, gh CLI) in tests
+- Test both success and error paths
+
+### Adding New Features
+
+1. **Create package in `pkg/`** if it's reusable logic
+2. **Add to services** if it needs to be app-wide
+3. **Wire into commands** in `cmd/`
+4. **Add tests** in `*_test.go` files
+5. **Update README** with new functionality
+
+### Running Locally
+
 ```bash
 # Run without building
 go run main.go [command]
 
-# Run tests (when added)
-go test ./...
+# Example: test setup command
+go run main.go setup
 
-# Format code
-go fmt ./...
+# Example: test checkout with autocomplete
+go run main.go checkout
 ```
 
 ## Releases

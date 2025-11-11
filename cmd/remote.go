@@ -8,8 +8,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/velvee-ai/ai-workflow/pkg/config"
 	"github.com/spf13/cobra"
+	"github.com/velvee-ai/ai-workflow/pkg/config"
 )
 
 var remoteCmd = &cobra.Command{

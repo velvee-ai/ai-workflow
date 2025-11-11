@@ -9,28 +9,28 @@ import (
 	"strings"
 	"time"
 
-	"github.com/velvee-ai/ai-workflow/pkg/config"
 	"github.com/spf13/cobra"
+	"github.com/velvee-ai/ai-workflow/pkg/config"
 )
 
 // Cache for repo list and branch lists to speed up autocomplete
 var (
-	repoListCache       []string
-	repoListCacheTime   time.Time
-	repoListCacheTTL    = 5 * time.Minute
-	branchListCache     = make(map[string]branchCacheEntry)
-	branchListCacheTTL  = 5 * time.Minute
+	repoListCache      []string
+	repoListCacheTime  time.Time
+	repoListCacheTTL   = 5 * time.Minute
+	branchListCache    = make(map[string]branchCacheEntry)
+	branchListCacheTTL = 5 * time.Minute
 )
 
 type branchCacheEntry struct {
-	branches []string
+	branches  []string
 	fetchedAt time.Time
 }
 
 var checkoutCmd = &cobra.Command{
 	Use:   "checkout [repo] [branch]",
 	Short: "Git checkout operations with worktree support",
-	Long:  `Manage git repositories and branches using worktrees for parallel development.
+	Long: `Manage git repositories and branches using worktrees for parallel development.
 
 Direct Usage (with autocomplete):
   work checkout <repo> <branch>
@@ -178,13 +178,13 @@ func runCheckoutDirect(cmd *cobra.Command, args []string) {
 	worktreePath := filepath.Join(containerRoot, branchName)
 
 	// Check if worktree already exists
+	var worktreeExists bool
 	if info, err := os.Stat(worktreePath); err == nil && info.IsDir() {
 		if isGitWorktree(worktreePath) {
 			currentBranch := getCurrentBranch(worktreePath)
 			if currentBranch == branchName {
-				fmt.Printf("Worktree already exists for branch '%s'\n", branchName)
-				fmt.Printf("Path: %s\n", worktreePath)
-				return
+				worktreeExists = true
+				fmt.Printf("Switching to existing worktree for branch '%s'\n", branchName)
 			} else {
 				fmt.Fprintf(os.Stderr, "Error: Folder '%s' exists but is on branch '%s', not '%s'\n",
 					worktreePath, currentBranch, branchName)
@@ -201,10 +201,30 @@ func runCheckoutDirect(cmd *cobra.Command, args []string) {
 			fmt.Fprintf(os.Stderr, "Error creating worktree: %v\n", err)
 			os.Exit(1)
 		}
+		fmt.Printf("Created worktree for branch '%s'\n", branchName)
+	}
+
+	// Change to the worktree directory
+	if err := os.Chdir(worktreePath); err != nil {
+		fmt.Fprintf(os.Stderr, "Error changing to worktree: %v\n", err)
+		os.Exit(1)
+	}
+
+	// If worktree already existed, try to sync it
+	if worktreeExists {
+		// Try to pull latest changes
+		cmd := exec.Command("git", "pull", "--rebase")
+		cmd.Dir = worktreePath
+		if err := cmd.Run(); err != nil {
+			// Silently ignore errors (uncommitted changes, etc.)
+			fmt.Printf("Note: Could not sync with remote (you may have uncommitted changes)\n")
+		} else {
+			fmt.Printf("Synced with remote\n")
+		}
 	}
 
 	absPath, _ := filepath.Abs(worktreePath)
-	fmt.Printf("Created worktree for branch '%s': %s\n", branchName, absPath)
+	fmt.Printf("Path: %s\n", absPath)
 
 	// Try to open in configured IDE (optional, won't fail if IDE is not available)
 	openInIDE(worktreePath)
@@ -300,15 +320,13 @@ func runCheckoutBranch(cmd *cobra.Command, args []string) {
 	worktreePath := filepath.Join(containerRoot, branchName)
 
 	// Check if worktree already exists
+	var worktreeExists bool
 	if info, err := os.Stat(worktreePath); err == nil && info.IsDir() {
 		if isGitWorktree(worktreePath) {
 			currentBranch := getCurrentBranch(worktreePath)
 			if currentBranch == branchName {
-				fmt.Printf("Worktree already exists for branch '%s'\n", branchName)
-				if err := os.Chdir(worktreePath); err != nil {
-					fmt.Fprintf(os.Stderr, "Error changing to worktree: %v\n", err)
-					os.Exit(1)
-				}
+				worktreeExists = true
+				fmt.Printf("Switching to existing worktree for branch '%s'\n", branchName)
 			} else {
 				fmt.Fprintf(os.Stderr, "Error: Folder '%s' exists but is on branch '%s', not '%s'\n",
 					worktreePath, currentBranch, branchName)
@@ -325,14 +343,30 @@ func runCheckoutBranch(cmd *cobra.Command, args []string) {
 			fmt.Fprintf(os.Stderr, "Error creating worktree: %v\n", err)
 			os.Exit(1)
 		}
-		if err := os.Chdir(worktreePath); err != nil {
-			fmt.Fprintf(os.Stderr, "Error changing to worktree: %v\n", err)
-			os.Exit(1)
+		fmt.Printf("Created worktree for branch '%s'\n", branchName)
+	}
+
+	// Change to the worktree directory
+	if err := os.Chdir(worktreePath); err != nil {
+		fmt.Fprintf(os.Stderr, "Error changing to worktree: %v\n", err)
+		os.Exit(1)
+	}
+
+	// If worktree already existed, try to sync it
+	if worktreeExists {
+		// Try to pull latest changes
+		cmd := exec.Command("git", "pull", "--rebase")
+		cmd.Dir = worktreePath
+		if err := cmd.Run(); err != nil {
+			// Silently ignore errors (uncommitted changes, etc.)
+			fmt.Printf("Note: Could not sync with remote (you may have uncommitted changes)\n")
+		} else {
+			fmt.Printf("Synced with remote\n")
 		}
 	}
 
 	absPath, _ := filepath.Abs(worktreePath)
-	fmt.Printf("Switched to branch worktree: %s\n", absPath)
+	fmt.Printf("Path: %s\n", absPath)
 
 	// Try to open in configured IDE (optional, won't fail if IDE is not available)
 	openInIDE(worktreePath)
@@ -513,6 +547,10 @@ func listBranchesForRepo(repoName string) []string {
 	if _, err := os.Stat(gitRoot); os.IsNotExist(err) {
 		return []string{}
 	}
+
+	// Prune stale remote-tracking branches first
+	pruneCmd := exec.Command("git", "-C", gitRoot, "remote", "prune", "origin")
+	pruneCmd.Run() // Ignore errors, continue even if prune fails
 
 	// List remote branches using git branch -r
 	cmd := exec.Command("git", "-C", gitRoot, "branch", "-r")

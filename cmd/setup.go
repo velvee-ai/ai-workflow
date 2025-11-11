@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/velvee-ai/ai-workflow/pkg/config"
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
+	"github.com/velvee-ai/ai-workflow/pkg/config"
 )
 
 var setupCmd = &cobra.Command{
@@ -196,7 +196,7 @@ func runSetup(cmd *cobra.Command, args []string) {
 
 func runDoctor(cmd *cobra.Command, args []string) {
 	fmt.Println("🩺 Work CLI Health Check")
-	fmt.Println("========================\n")
+	fmt.Println("========================")
 
 	allGood := true
 

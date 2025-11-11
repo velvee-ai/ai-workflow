@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/velvee-ai/ai-workflow/pkg/config"
 	"github.com/spf13/cobra"
+	"github.com/velvee-ai/ai-workflow/pkg/config"
+	"github.com/velvee-ai/ai-workflow/pkg/services"
 )
 
 var (
@@ -62,9 +63,14 @@ func init() {
 	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.work/config.yaml)")
 }
 
-// initConfig initializes the configuration
+// initConfig initializes the configuration and services
 func initConfig() {
 	if err := config.Init(); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: Failed to initialize config: %v\n", err)
+		return
+	}
+
+	if err := services.Init(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Failed to initialize services: %v\n", err)
 	}
 }
