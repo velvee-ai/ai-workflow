@@ -30,6 +30,16 @@ builds:
       - -X main.version={{.Version}}
       - -X main.commit={{.Commit}}
       - -X main.date={{.Date}}
+    # Reduce binary size with additional flags
+    flags:
+      - -trimpath
+
+# UPX compression to reduce binary size
+upx:
+  - enabled: true
+    compress: best
+    lzma: true
+    goos: [darwin]
 
 archives:
   - id: ai-workflow-archive
