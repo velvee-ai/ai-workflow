@@ -21,6 +21,7 @@ go.work
 work
 dist/
 build/
+completions/
 
 # IDE specific files
 .vscode/

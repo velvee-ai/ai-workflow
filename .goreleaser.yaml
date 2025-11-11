@@ -8,6 +8,11 @@ before:
     # Ensure dependencies are up to date
     - go mod tidy
     - go mod download
+    # Generate shell completions
+    - mkdir -p completions
+    - sh -c "go run main.go completion bash > completions/work.bash"
+    - sh -c "go run main.go completion zsh > completions/_work"
+    - sh -c "go run main.go completion fish > completions/work.fish"
 
 builds:
   - id: work
@@ -39,6 +44,7 @@ archives:
     files:
       - README.md
       - LICENSE*
+      - completions/*
 
 checksum:
   name_template: 'checksums.txt'
@@ -84,6 +90,11 @@ brews:
     # Install configuration
     install: |
       bin.install "work"
+
+      # Generate and install shell completions
+      bash_completion.install "completions/work.bash" => "work"
+      zsh_completion.install "completions/_work"
+      fish_completion.install "completions/work.fish"
 
     # Test configuration
     test: |
