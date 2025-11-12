@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"regexp"
@@ -56,6 +57,16 @@ func runRemote(cmd *cobra.Command, args []string) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
+	}
+
+	// Detect current branch and append to URL if available
+	branchName := getCurrentBranch(".")
+	if branchName != "" && branchName != "HEAD" {
+		// Trim trailing slash to avoid double slashes
+		browserURL = strings.TrimSuffix(browserURL, "/")
+		// Append /tree/<escaped-branch>
+		escapedBranch := url.PathEscape(branchName)
+		browserURL = fmt.Sprintf("%s/tree/%s", browserURL, escapedBranch)
 	}
 
 	fmt.Printf("Opening: %s\n", browserURL)

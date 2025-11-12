@@ -278,8 +278,11 @@ work remote
 **Features:**
 
 - Automatically detects git remote URL
+- Opens the current branch on GitHub when possible (e.g., `https://github.com/user/repo/tree/feature-branch`)
+- Falls back to repository root if not on a named branch (detached HEAD)
 - Converts SSH and HTTPS URLs to browser-friendly format
 - Works with any git hosting service (GitHub, GitLab, Bitbucket, etc.)
+- Handles branch names with special characters (e.g., `feature/new-api`)
 - Configurable default remote via `work config set default_remote <name>`
 
 ### Cache Management
