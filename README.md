@@ -383,7 +383,7 @@ Repositories can provide custom automation via a `.work/post_checkout.sh` script
 **Script location:** `.work/post_checkout.sh` (relative to the worktree root)
 
 **Behavior:**
-- If the script exists and is executable, `work` runs it with `bash` after checkout
+- If the script exists, `work` runs it using your default shell (`$SHELL`, or `/bin/sh` as fallback) after checkout
 - The script runs with the worktree directory as its working directory
 - If the script fails, a warning is printed, but the checkout is still considered successful
 - If the script does not exist, `work` falls back to opening the configured IDE (VSCode/Cursor)

@@ -906,9 +906,16 @@ func runPostCheckoutActions(worktreePath string) {
 	// Check if the script exists
 	info, err := os.Stat(scriptPath)
 	if err == nil && !info.IsDir() {
-		// Script exists, run it
+		// Script exists, run it using the user's default shell
 		fmt.Printf("Running .work/post_checkout.sh…\n")
-		cmd := exec.Command("bash", scriptPath)
+
+		// Get the user's shell from SHELL environment variable, default to sh if not set
+		shell := os.Getenv("SHELL")
+		if shell == "" {
+			shell = "/bin/sh"
+		}
+
+		cmd := exec.Command(shell, scriptPath)
 		cmd.Dir = worktreePath
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
