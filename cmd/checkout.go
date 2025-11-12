@@ -256,8 +256,8 @@ func checkoutRepoBranch(repoName, branchName string) {
 	absPath, _ := filepath.Abs(worktreePath)
 	fmt.Printf("Path: %s\n", absPath)
 
-	// Try to open in configured IDE (optional, won't fail if IDE is not available)
-	openInIDE(worktreePath)
+	// Run post-checkout actions (custom script or IDE fallback)
+	runPostCheckoutActions(worktreePath)
 }
 
 func runCheckoutRoot(cmd *cobra.Command, args []string) {
@@ -398,8 +398,8 @@ func runCheckoutBranch(cmd *cobra.Command, args []string) {
 	absPath, _ := filepath.Abs(worktreePath)
 	fmt.Printf("Path: %s\n", absPath)
 
-	// Try to open in configured IDE (optional, won't fail if IDE is not available)
-	openInIDE(worktreePath)
+	// Run post-checkout actions (custom script or IDE fallback)
+	runPostCheckoutActions(worktreePath)
 }
 
 func runCheckoutNew(cmd *cobra.Command, args []string) {
@@ -897,6 +897,31 @@ func openInIDE(path string) {
 		// Silently ignore errors if IDE is not available
 		// User can see the path printed anyway
 	}
+}
+
+func runPostCheckoutActions(worktreePath string) {
+	// Build path to post-checkout script
+	scriptPath := filepath.Join(worktreePath, ".work", "post_checkout.sh")
+
+	// Check if the script exists
+	info, err := os.Stat(scriptPath)
+	if err == nil && !info.IsDir() {
+		// Script exists, run it
+		fmt.Printf("Running .work/post_checkout.sh…\n")
+		cmd := exec.Command("bash", scriptPath)
+		cmd.Dir = worktreePath
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		if err := cmd.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: .work/post_checkout.sh failed: %v\n", err)
+			// Do NOT fall back to IDE - repository controls its own flow
+		}
+		return
+	}
+
+	// Script doesn't exist, fall back to IDE behavior
+	openInIDE(worktreePath)
 }
 
 func runCacheClear(cmd *cobra.Command, args []string) {

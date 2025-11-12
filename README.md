@@ -376,6 +376,41 @@ Configure your preference with:
 work config set preferred_ide cursor
 ```
 
+### Post-checkout Automation Scripts
+
+Repositories can provide custom automation via a `.work/post_checkout.sh` script in the worktree root. When this script exists, `work` will execute it after creating or switching to a worktree, giving teams full control over the post-checkout workflow.
+
+**Script location:** `.work/post_checkout.sh` (relative to the worktree root)
+
+**Behavior:**
+- If the script exists and is executable, `work` runs it with `bash` after checkout
+- The script runs with the worktree directory as its working directory
+- If the script fails, a warning is printed, but the checkout is still considered successful
+- If the script does not exist, `work` falls back to opening the configured IDE (VSCode/Cursor)
+
+**Example use cases:**
+- Install dependencies automatically (`npm install`, `go mod download`, etc.)
+- Run initialization scripts or setup tasks
+- Open the IDE as the last step if desired
+
+**Example script:**
+
+```bash
+#!/bin/bash
+# .work/post_checkout.sh
+
+echo "Installing dependencies..."
+npm install
+
+echo "Running database migrations..."
+npm run db:migrate
+
+# Optional: open IDE after automation
+cursor .
+```
+
+This hook allows teams to standardize their development environment setup while maintaining the convenience of automatic IDE opening when no custom script is needed.
+
 ### Caching Strategy
 
 To provide fast autocomplete while keeping data fresh:
