@@ -206,8 +206,17 @@ work checkout myrepo <TAB>  # Lists branches in that repo
 work checkout myrepo feature-123
 work checkout myrepo main
 
+# Create a NEW remote branch and checkout locally (with tab completion!)
+work checkout new <TAB>              # Lists your repos from preferred orgs
+work checkout new myrepo feature-api # Creates branch remotely, then checks out
+
+# This will:
+# - Create the branch remotely on GitHub from the base branch (default: main)
+# - Create a local worktree for the new branch
+# - Open in your configured IDE (if set)
+
 # Create branch from GitHub issue
-work checkout https://github.com/user/repo/issues/42
+work checkout branch https://github.com/user/repo/issues/42
 
 # This will:
 # - Create a branch from the issue (using gh CLI)
@@ -432,8 +441,10 @@ Quick reference for all available commands:
 | `work config set <key> <value>` | Set a configuration value                             |
 | `work config path`              | Show configuration file path                          |
 | `work checkout <repo> <branch>` | Checkout or create a git worktree (with autocomplete) |
+| `work checkout new <repo> <branch>` | Create remote branch via GitHub and checkout locally |
 | `work checkout root <url>`      | Clone a repository with worktree-ready structure      |
-| `work checkout <issue-url>`     | Create branch from GitHub issue                       |
+| `work checkout branch <branch>` | Checkout branch in current repo using worktree        |
+| `work checkout branch <issue-url>` | Create branch from GitHub issue                    |
 | `work commit <message>`         | Add, commit, pull, push, and create PR                |
 | `work remote`                   | Open repository in browser                            |
 | `work cache-clear checkout`     | Clear autocomplete cache and checkout                 |

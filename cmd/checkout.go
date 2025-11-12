@@ -98,6 +98,30 @@ Example:
 	Run: runCacheClear,
 }
 
+var checkoutNewCmd = &cobra.Command{
+	Use:   "new <repo> <branch>",
+	Short: "Create a remote branch via GitHub and checkout locally",
+	Long: `Create a new branch on GitHub from the base branch (default: main) and then
+create a local worktree for it.
+
+This command:
+1. Creates the branch remotely via GitHub CLI (gh)
+2. Uses the configured checkout_base_branch (default: main) as the base
+3. Creates/switches to a local worktree for the new branch
+4. Opens the worktree in your configured IDE
+
+Example:
+  work checkout new myrepo feature-new-api
+  work checkout new backend bugfix-123
+
+The branch will be created from the base branch's current HEAD.
+If the branch already exists remotely, the command will continue and just
+create the local worktree.`,
+	Args:              cobra.ExactArgs(2),
+	ValidArgsFunction: completeGitRepos,
+	Run:               runCheckoutNew,
+}
+
 func runCheckoutDirect(cmd *cobra.Command, args []string) {
 	// If no args, show help
 	if len(args) == 0 {
@@ -115,6 +139,12 @@ func runCheckoutDirect(cmd *cobra.Command, args []string) {
 	repoName := args[0]
 	branchName := args[1]
 
+	checkoutRepoBranch(repoName, branchName)
+}
+
+// checkoutRepoBranch performs the actual checkout/worktree creation logic.
+// This is the shared implementation used by both direct checkout and new branch creation.
+func checkoutRepoBranch(repoName, branchName string) {
 	// Get git folder from config
 	gitFolder := config.GetString("default_git_folder")
 	if gitFolder == "" {
@@ -370,6 +400,73 @@ func runCheckoutBranch(cmd *cobra.Command, args []string) {
 
 	// Try to open in configured IDE (optional, won't fail if IDE is not available)
 	openInIDE(worktreePath)
+}
+
+func runCheckoutNew(cmd *cobra.Command, args []string) {
+	repoName := args[0]
+	branchName := args[1]
+
+	// Step 1: Determine which org the repo belongs to by fetching clone URL
+	cloneURL := getRepoCloneURL(repoName)
+	if cloneURL == "" {
+		fmt.Fprintf(os.Stderr, "Error: Could not find repository '%s' in configured orgs\n", repoName)
+		fmt.Fprintf(os.Stderr, "Run: work checkout root <git-url> to clone manually\n")
+		os.Exit(1)
+	}
+
+	// Step 2: Extract owner from clone URL
+	owner := extractOwnerFromCloneURL(cloneURL)
+	if owner == "" {
+		fmt.Fprintf(os.Stderr, "Error: Could not extract owner from clone URL: %s\n", cloneURL)
+		os.Exit(1)
+	}
+
+	// Step 3: Get base branch from config
+	baseBranch := config.GetString("checkout_base_branch")
+	if baseBranch == "" {
+		baseBranch = "main"
+	}
+
+	// Step 4: Get base branch SHA
+	fmt.Printf("Fetching base branch '%s' SHA...\n", baseBranch)
+	shaCmd := exec.Command("gh", "api", fmt.Sprintf("repos/%s/%s/git/ref/heads/%s", owner, repoName, baseBranch), "--jq", ".object.sha")
+	shaOutput, err := shaCmd.Output()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: Could not fetch base branch '%s' SHA: %v\n", baseBranch, err)
+		fmt.Fprintf(os.Stderr, "Make sure the base branch exists and you have access to the repository.\n")
+		os.Exit(1)
+	}
+	baseSHA := strings.TrimSpace(string(shaOutput))
+	if baseSHA == "" {
+		fmt.Fprintf(os.Stderr, "Error: Empty SHA returned for base branch '%s'\n", baseBranch)
+		os.Exit(1)
+	}
+
+	// Step 5: Create remote branch
+	fmt.Printf("Creating remote branch '%s' from '%s' (SHA: %s)...\n", branchName, baseBranch, baseSHA[:7])
+	createCmd := exec.Command("gh", "api", fmt.Sprintf("repos/%s/%s/git/refs", owner, repoName),
+		"--method", "POST",
+		"-f", fmt.Sprintf("ref=refs/heads/%s", branchName),
+		"-f", fmt.Sprintf("sha=%s", baseSHA))
+
+	createOutput, err := createCmd.CombinedOutput()
+	if err != nil {
+		// Check if branch already exists (422 status)
+		outputStr := string(createOutput)
+		if strings.Contains(outputStr, "Reference already exists") || strings.Contains(outputStr, "422") {
+			fmt.Printf("Branch '%s' already exists remotely; continuing with checkout\n", branchName)
+		} else {
+			fmt.Fprintf(os.Stderr, "Error: Could not create remote branch: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Output: %s\n", outputStr)
+			os.Exit(1)
+		}
+	} else {
+		fmt.Printf("Created remote branch '%s/%s:%s'\n", owner, repoName, branchName)
+	}
+
+	// Step 6: Perform local checkout using shared logic
+	fmt.Printf("Creating local worktree...\n")
+	checkoutRepoBranch(repoName, branchName)
 }
 
 // Helper functions
@@ -651,6 +748,35 @@ func extractRepoName(gitURL string) string {
 	return strings.TrimSuffix(base, ".git")
 }
 
+// extractOwnerFromCloneURL extracts the owner/org from a GitHub clone URL.
+// Example: "https://github.com/velvee-ai/repo.git" -> "velvee-ai"
+func extractOwnerFromCloneURL(cloneURL string) string {
+	// Remove .git suffix
+	url := strings.TrimSuffix(cloneURL, ".git")
+
+	// Handle HTTPS format: https://github.com/owner/repo
+	if strings.Contains(url, "://") {
+		parts := strings.Split(url, "/")
+		if len(parts) >= 2 {
+			return parts[len(parts)-2]
+		}
+	}
+
+	// Handle SSH format: git@github.com:owner/repo
+	if strings.Contains(url, ":") {
+		parts := strings.Split(url, ":")
+		if len(parts) == 2 {
+			ownerRepo := parts[1]
+			ownerParts := strings.Split(ownerRepo, "/")
+			if len(ownerParts) >= 1 {
+				return ownerParts[0]
+			}
+		}
+	}
+
+	return ""
+}
+
 func isInsideGitRepo() bool {
 	cmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")
 	err := cmd.Run()
@@ -789,6 +915,7 @@ func init() {
 	// Add subcommands to checkout command
 	checkoutCmd.AddCommand(checkoutRootCmd)
 	checkoutCmd.AddCommand(checkoutBranchCmd)
+	checkoutCmd.AddCommand(checkoutNewCmd)
 	checkoutCmd.AddCommand(checkoutCacheClearCmd)
 
 	// Register checkout command with root
