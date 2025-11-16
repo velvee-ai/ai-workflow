@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -122,8 +123,15 @@ func runCleanupList(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	totalWorktrees := 0
-	staleWorktrees := 0
+	// Process repositories concurrently
+	type repoResult struct {
+		repoName  string
+		worktrees []WorktreeInfo
+		err       error
+	}
+
+	var wg sync.WaitGroup
+	results := make(chan repoResult, len(repos))
 
 	for _, repoPath := range repos {
 		repoName := filepath.Base(repoPath)
@@ -131,18 +139,43 @@ func runCleanupList(cmd *cobra.Command, args []string) {
 			continue
 		}
 
-		worktrees, err := scanWorktrees(ctx, repoPath, repoName)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error scanning %s: %v\n", repoName, err)
+		wg.Add(1)
+		go func(rPath, rName string) {
+			defer wg.Done()
+
+			worktrees, err := scanWorktrees(ctx, rPath, rName)
+			results <- repoResult{
+				repoName:  rName,
+				worktrees: worktrees,
+				err:       err,
+			}
+		}(repoPath, repoName)
+	}
+
+	// Close results channel after all goroutines complete
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// Collect and display results
+	totalWorktrees := 0
+	staleWorktrees := 0
+	hasResults := false
+
+	for result := range results {
+		if result.err != nil {
+			fmt.Fprintf(os.Stderr, "Error scanning %s: %v\n", result.repoName, result.err)
 			continue
 		}
 
-		if len(worktrees) == 0 {
+		if len(result.worktrees) == 0 {
 			continue
 		}
 
-		fmt.Printf("\nRepository: %s\n", repoName)
-		for _, wt := range worktrees {
+		hasResults = true
+		fmt.Printf("\nRepository: %s\n", result.repoName)
+		for _, wt := range result.worktrees {
 			totalWorktrees++
 			if wt.IsStale() {
 				staleWorktrees++
@@ -157,7 +190,7 @@ func runCleanupList(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	if totalWorktrees == 0 {
+	if !hasResults || totalWorktrees == 0 {
 		fmt.Println("\nNo worktrees found")
 		return
 	}
@@ -189,8 +222,15 @@ func runCleanupScan(cmd *cobra.Command, args []string) {
 
 	fmt.Println("Scanning for stale worktrees...")
 
-	var allStale []WorktreeInfo
-	totalSize := int64(0)
+	// Process repositories concurrently
+	type repoResult struct {
+		repoName  string
+		worktrees []WorktreeInfo
+		err       error
+	}
+
+	var wg sync.WaitGroup
+	results := make(chan repoResult, len(repos))
 
 	for _, repoPath := range repos {
 		repoName := filepath.Base(repoPath)
@@ -198,13 +238,36 @@ func runCleanupScan(cmd *cobra.Command, args []string) {
 			continue
 		}
 
-		worktrees, err := scanWorktrees(ctx, repoPath, repoName)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error scanning %s: %v\n", repoName, err)
+		wg.Add(1)
+		go func(rPath, rName string) {
+			defer wg.Done()
+
+			worktrees, err := scanWorktrees(ctx, rPath, rName)
+			results <- repoResult{
+				repoName:  rName,
+				worktrees: worktrees,
+				err:       err,
+			}
+		}(repoPath, repoName)
+	}
+
+	// Close results channel after all goroutines complete
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// Collect stale worktrees
+	var allStale []WorktreeInfo
+	totalSize := int64(0)
+
+	for result := range results {
+		if result.err != nil {
+			fmt.Fprintf(os.Stderr, "Error scanning %s: %v\n", result.repoName, result.err)
 			continue
 		}
 
-		for _, wt := range worktrees {
+		for _, wt := range result.worktrees {
 			if wt.IsStale() {
 				allStale = append(allStale, wt)
 				totalSize += wt.SizeBytes
@@ -262,8 +325,15 @@ func runCleanupRun(cmd *cobra.Command, args []string) {
 
 	fmt.Println("Scanning for stale worktrees...")
 
-	var allStale []WorktreeInfo
-	totalSize := int64(0)
+	// Process repositories concurrently
+	type repoResult struct {
+		repoName  string
+		worktrees []WorktreeInfo
+		err       error
+	}
+
+	var wg sync.WaitGroup
+	results := make(chan repoResult, len(repos))
 
 	for _, repoPath := range repos {
 		repoName := filepath.Base(repoPath)
@@ -271,13 +341,36 @@ func runCleanupRun(cmd *cobra.Command, args []string) {
 			continue
 		}
 
-		worktrees, err := scanWorktrees(ctx, repoPath, repoName)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error scanning %s: %v\n", repoName, err)
+		wg.Add(1)
+		go func(rPath, rName string) {
+			defer wg.Done()
+
+			worktrees, err := scanWorktrees(ctx, rPath, rName)
+			results <- repoResult{
+				repoName:  rName,
+				worktrees: worktrees,
+				err:       err,
+			}
+		}(repoPath, repoName)
+	}
+
+	// Close results channel after all goroutines complete
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// Collect stale worktrees
+	var allStale []WorktreeInfo
+	totalSize := int64(0)
+
+	for result := range results {
+		if result.err != nil {
+			fmt.Fprintf(os.Stderr, "Error scanning %s: %v\n", result.repoName, result.err)
 			continue
 		}
 
-		for _, wt := range worktrees {
+		for _, wt := range result.worktrees {
 			if wt.IsStale() {
 				allStale = append(allStale, wt)
 				totalSize += wt.SizeBytes
