@@ -139,3 +139,128 @@ func (r *Runner) GetDefaultBranch(ctx context.Context, workDir string) (string, 
 
 	return branch, nil
 }
+
+// Worktree represents a git worktree entry.
+type Worktree struct {
+	Path   string
+	Branch string
+	Commit string
+}
+
+// ListWorktrees returns all worktrees for the repository.
+func (r *Runner) ListWorktrees(ctx context.Context, workDir string) ([]Worktree, error) {
+	output, err := r.RunSimple(ctx, workDir, "worktree", "list", "--porcelain")
+	if err != nil {
+		return nil, err
+	}
+
+	var worktrees []Worktree
+	var current Worktree
+
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			if current.Path != "" {
+				worktrees = append(worktrees, current)
+				current = Worktree{}
+			}
+			continue
+		}
+
+		if strings.HasPrefix(line, "worktree ") {
+			current.Path = strings.TrimPrefix(line, "worktree ")
+		} else if strings.HasPrefix(line, "HEAD ") {
+			current.Commit = strings.TrimPrefix(line, "HEAD ")
+		} else if strings.HasPrefix(line, "branch ") {
+			branch := strings.TrimPrefix(line, "branch ")
+			// Remove refs/heads/ prefix if present
+			current.Branch = strings.TrimPrefix(branch, "refs/heads/")
+		}
+	}
+
+	// Add last worktree if exists
+	if current.Path != "" {
+		worktrees = append(worktrees, current)
+	}
+
+	return worktrees, nil
+}
+
+// RemoveWorktree removes a worktree at the given path.
+func (r *Runner) RemoveWorktree(ctx context.Context, repoPath, worktreePath string) error {
+	_, err := r.RunSimple(ctx, repoPath, "worktree", "remove", worktreePath)
+	return err
+}
+
+// PruneWorktrees removes worktree metadata for deleted worktrees.
+func (r *Runner) PruneWorktrees(ctx context.Context, repoPath string) error {
+	_, err := r.RunSimple(ctx, repoPath, "worktree", "prune")
+	return err
+}
+
+// IsBranchMerged checks if a branch is merged into the base branch.
+func (r *Runner) IsBranchMerged(ctx context.Context, repoPath, branchName, baseBranch string) (bool, error) {
+	output, err := r.RunSimple(ctx, repoPath, "branch", "--merged", baseBranch)
+	if err != nil {
+		return false, err
+	}
+
+	// Check if branch name appears in merged branches
+	for _, line := range strings.Split(output, "\n") {
+		branch := strings.TrimSpace(strings.TrimPrefix(line, "*"))
+		branch = strings.TrimSpace(branch)
+		if branch == branchName {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// GetGitStatus returns the porcelain status output lines.
+// Empty slice means working tree is clean.
+func (r *Runner) GetGitStatus(ctx context.Context, workDir string) ([]string, error) {
+	output, err := r.RunSimple(ctx, workDir, "status", "--porcelain")
+	if err != nil {
+		return nil, err
+	}
+
+	if output == "" {
+		return []string{}, nil
+	}
+
+	lines := strings.Split(output, "\n")
+	var result []string
+	for _, line := range lines {
+		if strings.TrimSpace(line) != "" {
+			result = append(result, line)
+		}
+	}
+
+	return result, nil
+}
+
+// FetchPrune fetches from remote and prunes deleted branches.
+func (r *Runner) FetchPrune(ctx context.Context, workDir string) error {
+	_, err := r.RunSimple(ctx, workDir, "fetch", "--prune")
+	return err
+}
+
+// RemoteBranchExists checks if a branch exists on the remote.
+func (r *Runner) RemoteBranchExists(ctx context.Context, workDir, branchName string) (bool, error) {
+	output, err := r.RunSimple(ctx, workDir, "branch", "-r")
+	if err != nil {
+		return false, err
+	}
+
+	// Look for origin/<branchName>
+	target := "origin/" + branchName
+	for _, line := range strings.Split(output, "\n") {
+		branch := strings.TrimSpace(line)
+		if branch == target {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
