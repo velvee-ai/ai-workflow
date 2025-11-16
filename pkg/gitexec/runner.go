@@ -107,3 +107,35 @@ func (r *Runner) BranchExists(ctx context.Context, workDir, branch string) bool 
 func (r *Runner) IsWorktree(ctx context.Context, path string) bool {
 	return r.IsInsideWorkTree(ctx, path)
 }
+
+// GetDefaultBranch returns the default branch name (e.g., "main" or "master").
+// It uses the GitHub CLI to query the repository's default branch.
+func (r *Runner) GetDefaultBranch(ctx context.Context, workDir string) (string, error) {
+	// Apply timeout if not already set in context
+	if r.timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, r.timeout)
+		defer cancel()
+	}
+
+	cmd := exec.CommandContext(ctx, "gh", "repo", "view", "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name")
+	if workDir != "" {
+		cmd.Dir = workDir
+	}
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	if err != nil {
+		return "", fmt.Errorf("gh repo view failed: %w (stderr: %s)", err, strings.TrimSpace(stderr.String()))
+	}
+
+	branch := strings.TrimSpace(stdout.String())
+	if branch == "" {
+		return "", fmt.Errorf("could not determine default branch")
+	}
+
+	return branch, nil
+}

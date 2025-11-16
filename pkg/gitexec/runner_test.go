@@ -2,6 +2,7 @@ package gitexec
 
 import (
 	"context"
+	"os/exec"
 	"testing"
 	"time"
 )
@@ -40,4 +41,24 @@ func TestRunner_RunIgnoreError(t *testing.T) {
 	output := runner.RunIgnoreError(ctx, "", "this-command-does-not-exist")
 	// Should not panic, just return empty or error output
 	t.Logf("Output from failed command: %q", output)
+}
+
+func TestRunner_GetDefaultBranch(t *testing.T) {
+	// Skip test if gh CLI is not available
+	if _, err := exec.LookPath("gh"); err != nil {
+		t.Skip("gh CLI not available, skipping test")
+	}
+
+	runner := New(5 * time.Second)
+	ctx := context.Background()
+
+	// Test getting default branch (should be "main" or "master")
+	branch, err := runner.GetDefaultBranch(ctx, "")
+	if err != nil {
+		t.Fatalf("expected to get default branch: %v", err)
+	}
+	if branch != "main" && branch != "master" {
+		t.Errorf("expected default branch to be 'main' or 'master', got %q", branch)
+	}
+	t.Logf("Default branch detected: %q", branch)
 }
