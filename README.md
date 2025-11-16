@@ -27,7 +27,6 @@ A powerful CLI tool for orchestrating git workflows, featuring git worktree mana
 │   ├── setup.go         # Setup wizard and health check (doctor)
 │   ├── remote.go        # Open repository in browser
 │   ├── completion.go    # Shell completion generation
-│   ├── cache_clear.go   # Cache management
 │   └── git.go           # Basic git operations
 ├── pkg/
 │   ├── cache/           # Generic TTL cache implementation
@@ -230,7 +229,6 @@ work checkout branch https://github.com/user/repo/issues/42
 - Repository names from your configured GitHub organizations
 - Branch names for the selected repository
 - Caching for fast responses (5-minute TTL)
-- Use `work cache-clear checkout` to force refresh
 
 **Benefits of this workflow:**
 
@@ -284,20 +282,6 @@ work remote
 - Works with any git hosting service (GitHub, GitLab, Bitbucket, etc.)
 - Handles branch names with special characters (e.g., `feature/new-api`)
 - Configurable default remote via `work config set default_remote <name>`
-
-### Cache Management
-
-Control the autocomplete cache for repositories and branches:
-
-```bash
-# Clear cache and fetch fresh data
-work cache-clear checkout myrepo branch-name
-
-# Or just clear the cache
-work cache-clear checkout <TAB>  # Autocomplete with fresh data
-```
-
-The autocomplete system caches repository and branch lists for 5 minutes to provide fast responses. Use `cache-clear` when you need to see newly created repositories or branches immediately.
 
 ### Shell Completion
 
@@ -420,7 +404,6 @@ To provide fast autocomplete while keeping data fresh:
 
 - Repository lists are cached for 5 minutes
 - Branch lists are cached per-repository for 5 minutes
-- Use `work cache-clear checkout` to force refresh
 - Cache is stored in memory (cleared on exit)
 
 ## Contributing
@@ -485,7 +468,6 @@ Quick reference for all available commands:
 | `work checkout branch <issue-url>` | Create branch from GitHub issue                    |
 | `work commit <message>`         | Add, commit, pull, push, and create PR                |
 | `work remote`                   | Open repository in browser                            |
-| `work cache-clear checkout`     | Clear autocomplete cache and checkout                 |
 | `work completion <shell>`       | Generate shell completion script                      |
 | `work git status`               | Show git status                                       |
 | `work git branch`               | List git branches                                     |
