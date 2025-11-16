@@ -54,6 +54,10 @@ This is a safe way to preview what the cleanup would do before running it.`,
 	Run: runCleanupScan,
 }
 
+var (
+	cleanupForce bool
+)
+
 var cleanupRunCmd = &cobra.Command{
 	Use:   "run [repo]",
 	Short: "Interactively cleanup stale worktrees",
@@ -63,7 +67,7 @@ The command will:
   1. Scan all repositories for stale worktrees
   2. Identify worktrees that are merged or have deleted remote branches
   3. Skip worktrees with uncommitted changes
-  4. Ask for confirmation before removing each worktree
+  4. Ask for confirmation before removing each worktree (unless --force is used)
   5. Clean up git metadata with 'git worktree prune'`,
 	Run: runCleanupRun,
 }
@@ -294,13 +298,18 @@ func runCleanupRun(cmd *cobra.Command, args []string) {
 
 	for _, wt := range allStale {
 		branchDisplay := filepath.Base(wt.Path)
-		fmt.Printf("Remove worktree '%s/%s' (%s)? [y/N] ", wt.RepoName, branchDisplay, wt.Reason)
 
-		var response string
-		fmt.Scanln(&response)
-		response = strings.ToLower(strings.TrimSpace(response))
+		shouldRemove := cleanupForce
+		if !cleanupForce {
+			fmt.Printf("Remove worktree '%s/%s' (%s)? [y/N] ", wt.RepoName, branchDisplay, wt.Reason)
 
-		if response == "y" || response == "yes" {
+			var response string
+			fmt.Scanln(&response)
+			response = strings.ToLower(strings.TrimSpace(response))
+			shouldRemove = (response == "y" || response == "yes")
+		}
+
+		if shouldRemove {
 			if err := removeWorktreeSafely(ctx, wt); err != nil {
 				fmt.Fprintf(os.Stderr, "  ✗ Error removing worktree: %v\n", err)
 				skipped++
@@ -313,7 +322,9 @@ func runCleanupRun(cmd *cobra.Command, args []string) {
 			fmt.Println("  Skipped")
 			skipped++
 		}
-		fmt.Println()
+		if !cleanupForce {
+			fmt.Println()
+		}
 	}
 
 	fmt.Printf("Cleanup complete!\n")
@@ -533,6 +544,9 @@ func init() {
 	cleanupCmd.AddCommand(cleanupListCmd)
 	cleanupCmd.AddCommand(cleanupScanCmd)
 	cleanupCmd.AddCommand(cleanupRunCmd)
+
+	// Add flags to run command
+	cleanupRunCmd.Flags().BoolVarP(&cleanupForce, "force", "f", false, "Skip confirmation prompts and remove all stale worktrees")
 
 	// Register cleanup command with root
 	rootCmd.AddCommand(cleanupCmd)
