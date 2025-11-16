@@ -412,19 +412,34 @@ These variables ensure scripts can correctly reference paths specific to the cur
 #!/bin/bash
 # .work/post_checkout.sh
 
-echo "Installing dependencies in $WORK_WORKTREE_PATH..."
-npm install
+echo "Setting up worktree: $WORK_WORKTREE_PATH"
 
 # Set up Python virtual environment in the current worktree
+# Note: .venv is typically gitignored, so we need to create it for each worktree
 if [ -f "requirements.txt" ]; then
-    echo "Setting up Python virtual environment..."
-    python3 -m venv "${WORK_WORKTREE_PATH}/.venv"
-    source "${WORK_WORKTREE_PATH}/.venv/bin/activate"
+    VENV_PATH="${WORK_WORKTREE_PATH}/.venv"
+
+    if [ ! -d "$VENV_PATH" ]; then
+        echo "Creating Python virtual environment..."
+        python3 -m venv "$VENV_PATH"
+    fi
+
+    echo "Activating virtual environment and installing dependencies..."
+    source "$VENV_PATH/bin/activate"
     pip install -r requirements.txt
 fi
 
-echo "Running database migrations..."
-npm run db:migrate
+# Install npm dependencies
+if [ -f "package.json" ]; then
+    echo "Installing npm dependencies..."
+    npm install
+fi
+
+# Run database migrations
+if [ -f "package.json" ] && npm run | grep -q "db:migrate"; then
+    echo "Running database migrations..."
+    npm run db:migrate
+fi
 
 # Optional: open IDE after automation
 cursor "$WORK_WORKTREE_PATH"
