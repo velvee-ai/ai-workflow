@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
@@ -198,154 +199,232 @@ func runDoctor(cmd *cobra.Command, args []string) {
 	fmt.Println("🩺 Work CLI Health Check")
 	fmt.Println("========================")
 
-	allGood := true
-
-	// 1. Check git
-	fmt.Print("Checking git... ")
-	if err := exec.Command("git", "--version").Run(); err != nil {
-		fmt.Println("❌ NOT FOUND")
-		fmt.Println("   Install git: https://git-scm.com/downloads")
-		allGood = false
-	} else {
-		output, _ := exec.Command("git", "--version").Output()
-		fmt.Printf("✓ %s\n", strings.TrimSpace(string(output)))
+	// Run checks concurrently where possible
+	type checkResult struct {
+		name        string
+		status      string
+		details     []string
+		critical    bool
+		failed      bool
+		order       int
 	}
-	fmt.Println() // Blank line separator
 
-	// 2. Check GitHub CLI
-	fmt.Print("Checking gh (GitHub CLI)... ")
-	if err := exec.Command("gh", "--version").Run(); err != nil {
-		fmt.Println("❌ NOT FOUND")
-		fmt.Println("   Install gh: https://cli.github.com/")
-		allGood = false
-	} else {
+	results := make(chan checkResult, 5)
+	var wg sync.WaitGroup
+
+	// Independent checks that can run in parallel
+	// 1. Check git
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		result := checkResult{name: "git", order: 1, critical: true}
+		if err := exec.Command("git", "--version").Run(); err != nil {
+			result.status = "❌ NOT FOUND"
+			result.details = []string{"Install git: https://git-scm.com/downloads"}
+			result.failed = true
+		} else {
+			output, _ := exec.Command("git", "--version").Output()
+			result.status = fmt.Sprintf("✓ %s", strings.TrimSpace(string(output)))
+		}
+		results <- result
+	}()
+
+	// 3. Check default git folder
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		result := checkResult{name: "default_git_folder", order: 3, critical: true}
+		gitFolder := config.GetString("default_git_folder")
+		if gitFolder == "" {
+			result.status = "❌ NOT CONFIGURED"
+			result.details = []string{"Run: work setup"}
+			result.failed = true
+		} else {
+			// Expand home directory if needed
+			if strings.HasPrefix(gitFolder, "~/") {
+				homeDir, _ := os.UserHomeDir()
+				gitFolder = filepath.Join(homeDir, gitFolder[2:])
+			}
+
+			if info, err := os.Stat(gitFolder); os.IsNotExist(err) {
+				result.status = fmt.Sprintf("❌ DOES NOT EXIST (%s)", gitFolder)
+				result.details = []string{"Run: work setup"}
+				result.failed = true
+			} else if !info.IsDir() {
+				result.status = fmt.Sprintf("❌ NOT A DIRECTORY (%s)", gitFolder)
+				result.failed = true
+			} else {
+				// Test write permissions
+				testFile := filepath.Join(gitFolder, ".work-test")
+				if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+					result.status = fmt.Sprintf("❌ NOT WRITABLE (%s)", gitFolder)
+					result.failed = true
+				} else {
+					os.Remove(testFile)
+					result.status = fmt.Sprintf("✓ %s", gitFolder)
+				}
+			}
+		}
+		results <- result
+	}()
+
+	// 5. Check preferred IDE
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		result := checkResult{name: "preferred_ide", order: 5, critical: false}
+		ide := config.GetString("preferred_ide")
+		if ide == "" || ide == "none" {
+			result.status = "✓ none (auto-open disabled)"
+		} else {
+			var command string
+			switch ide {
+			case "vscode":
+				command = "code"
+			case "cursor":
+				command = "cursor"
+			default:
+				command = ide
+			}
+
+			if err := exec.Command("which", command).Run(); err != nil {
+				result.status = fmt.Sprintf("⚠ %s command not found (set to '%s')", command, ide)
+				result.details = []string{"IDE won't auto-open but checkout will still work"}
+			} else {
+				result.status = fmt.Sprintf("✓ %s", ide)
+			}
+		}
+		results <- result
+	}()
+
+	// GitHub CLI checks (must be sequential within this goroutine)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		// 2. Check GitHub CLI
+		ghResult := checkResult{name: "gh (GitHub CLI)", order: 2, critical: true}
+		if err := exec.Command("gh", "--version").Run(); err != nil {
+			ghResult.status = "❌ NOT FOUND"
+			ghResult.details = []string{"Install gh: https://cli.github.com/"}
+			ghResult.failed = true
+			results <- ghResult
+			return
+		}
+
 		output, _ := exec.Command("gh", "--version").Output()
 		lines := strings.Split(string(output), "\n")
 		if len(lines) > 0 {
-			fmt.Printf("✓ %s\n", strings.TrimSpace(lines[0]))
+			ghResult.status = fmt.Sprintf("✓ %s", strings.TrimSpace(lines[0]))
 		}
+		results <- ghResult
 
-		// Check if authenticated
-		fmt.Print("Checking gh authentication... ")
-		cmd := exec.Command("gh", "auth", "status")
-		output, err := cmd.CombinedOutput()
-		outputStr := string(output)
+		// Check gh authentication (depends on gh being installed)
+		authResult := checkResult{name: "gh authentication", order: 2, critical: true}
+		authCmd := exec.Command("gh", "auth", "status")
+		authOutput, err := authCmd.CombinedOutput()
+		outputStr := string(authOutput)
 
-		// Check if at least one account is logged in successfully
 		hasValidAuth := strings.Contains(outputStr, "✓ Logged in to")
 		hasFailedAuth := strings.Contains(outputStr, "X Failed to log in")
 
 		if err != nil && !hasValidAuth {
-			// No valid authentication at all
-			fmt.Println("❌ NOT AUTHENTICATED")
-			fmt.Println("   Run: gh auth login")
-			allGood = false
+			authResult.status = "❌ NOT AUTHENTICATED"
+			authResult.details = []string{"Run: gh auth login"}
+			authResult.failed = true
 		} else if hasValidAuth && hasFailedAuth {
-			// Has at least one valid account but also some invalid tokens
-			fmt.Println("⚠️  PARTIAL AUTHENTICATION")
-			fmt.Println("\n   Details from 'gh auth status':")
+			authResult.status = "⚠️  PARTIAL AUTHENTICATION"
+			authResult.details = []string{
+				"",
+				"Details from 'gh auth status':",
+			}
 			for _, line := range strings.Split(strings.TrimSpace(outputStr), "\n") {
-				fmt.Printf("   %s\n", line)
+				authResult.details = append(authResult.details, line)
 			}
-			fmt.Println("\n   You have at least one valid account, but some accounts have invalid tokens.")
-			fmt.Println("   To fix invalid accounts, run: gh auth login -h github.com")
+			authResult.details = append(authResult.details,
+				"",
+				"You have at least one valid account, but some accounts have invalid tokens.",
+				"To fix invalid accounts, run: gh auth login -h github.com",
+			)
 		} else {
-			fmt.Println("✓")
+			authResult.status = "✓"
 		}
-	}
-	fmt.Println() // Blank line separator
+		results <- authResult
 
-	// 3. Check default git folder
-	fmt.Print("Checking default_git_folder... ")
-	gitFolder := config.GetString("default_git_folder")
-	if gitFolder == "" {
-		fmt.Println("❌ NOT CONFIGURED")
-		fmt.Println("   Run: work setup")
-		allGood = false
-	} else {
-		// Expand home directory if needed
-		if strings.HasPrefix(gitFolder, "~/") {
-			homeDir, _ := os.UserHomeDir()
-			gitFolder = filepath.Join(homeDir, gitFolder[2:])
+		// 4. Check preferred orgs (depends on gh)
+		orgsResult := checkResult{name: "preferred_orgs", order: 4, critical: false}
+		orgs := config.GetStringSlice("preferred_orgs")
+		if len(orgs) == 0 {
+			orgsResult.status = "⚠ NOT CONFIGURED"
+			orgsResult.details = []string{"Run: work setup"}
+			results <- orgsResult
+			return
 		}
 
-		if info, err := os.Stat(gitFolder); os.IsNotExist(err) {
-			fmt.Printf("❌ DOES NOT EXIST (%s)\n", gitFolder)
-			fmt.Println("   Run: work setup")
-			allGood = false
-		} else if !info.IsDir() {
-			fmt.Printf("❌ NOT A DIRECTORY (%s)\n", gitFolder)
-			allGood = false
-		} else {
-			// Test write permissions
-			testFile := filepath.Join(gitFolder, ".work-test")
-			if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
-				fmt.Printf("❌ NOT WRITABLE (%s)\n", gitFolder)
-				allGood = false
-			} else {
-				os.Remove(testFile)
-				fmt.Printf("✓ %s\n", gitFolder)
-			}
-		}
-	}
-	fmt.Println() // Blank line separator
-
-	// 4. Check preferred orgs
-	fmt.Print("Checking preferred_orgs... ")
-	orgs := config.GetStringSlice("preferred_orgs")
-	if len(orgs) == 0 {
-		fmt.Println("⚠ NOT CONFIGURED")
-		fmt.Println("   Run: work setup")
-	} else {
-		fmt.Printf("✓ %v\n", orgs)
+		orgsResult.status = fmt.Sprintf("✓ %v", orgs)
+		results <- orgsResult
 
 		// Try to verify access to at least one org
-		fmt.Print("Checking org access... ")
+		orgAccessResult := checkResult{name: "org access", order: 4, critical: false}
 		hasAccess := false
 		for _, org := range orgs {
 			if org == "" || org == "myorg" {
 				continue
 			}
-			cmd := exec.Command("gh", "api", fmt.Sprintf("orgs/%s", org))
-			if err := cmd.Run(); err == nil {
+			orgCmd := exec.Command("gh", "api", fmt.Sprintf("orgs/%s", org))
+			if err := orgCmd.Run(); err == nil {
 				hasAccess = true
 				break
 			}
 		}
 		if hasAccess {
-			fmt.Println("✓")
+			orgAccessResult.status = "✓"
 		} else {
-			fmt.Println("⚠ Cannot access configured orgs (may need valid org names)")
+			orgAccessResult.status = "⚠ Cannot access configured orgs (may need valid org names)"
+		}
+		results <- orgAccessResult
+	}()
+
+	// Close results channel when all checks complete
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// Collect all results
+	var allResults []checkResult
+	for result := range results {
+		allResults = append(allResults, result)
+	}
+
+	// Sort results by order to maintain consistent output
+	for i := 0; i < len(allResults); i++ {
+		for j := i + 1; j < len(allResults); j++ {
+			if allResults[i].order > allResults[j].order {
+				allResults[i], allResults[j] = allResults[j], allResults[i]
+			}
 		}
 	}
-	fmt.Println() // Blank line separator
 
-	// 5. Check preferred IDE
-	fmt.Print("Checking preferred_ide... ")
-	ide := config.GetString("preferred_ide")
-	if ide == "" || ide == "none" {
-		fmt.Println("✓ none (auto-open disabled)")
-	} else {
-		var command string
-		switch ide {
-		case "vscode":
-			command = "code"
-		case "cursor":
-			command = "cursor"
-		default:
-			command = ide
+	// Display results in order
+	allGood := true
+	for _, result := range allResults {
+		fmt.Printf("Checking %s... %s\n", result.name, result.status)
+		for _, detail := range result.details {
+			if detail == "" {
+				fmt.Println()
+			} else {
+				fmt.Printf("   %s\n", detail)
+			}
 		}
-
-		if err := exec.Command("which", command).Run(); err != nil {
-			fmt.Printf("⚠ %s command not found (set to '%s')\n", command, ide)
-			fmt.Printf("   IDE won't auto-open but checkout will still work\n")
-		} else {
-			fmt.Printf("✓ %s\n", ide)
+		if result.critical && result.failed {
+			allGood = false
 		}
+		fmt.Println() // Blank line separator
 	}
 
 	// Summary
-	fmt.Println("\n========================")
+	fmt.Println("========================")
 	if allGood {
 		fmt.Println("✓ All critical checks passed!")
 		fmt.Println("You're ready to use: work checkout <repo> <branch>")

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -18,8 +19,10 @@ var (
 	repoListCache      []string
 	repoListCacheTime  time.Time
 	repoListCacheTTL   = 5 * time.Minute
+	repoListCacheMutex sync.RWMutex
 	branchListCache    = make(map[string]branchCacheEntry)
 	branchListCacheTTL = 5 * time.Minute
+	branchListCacheMutex sync.RWMutex
 )
 
 type branchCacheEntry struct {
@@ -512,12 +515,17 @@ func cloneRepository(gitURL, repoName, gitFolder string) error {
 
 // listGitRepos returns a list of git repositories from local folder and GitHub orgs
 func listGitRepos() []string {
-	// Check if cache is still valid
+	// Check if cache is still valid (with mutex protection)
+	repoListCacheMutex.RLock()
 	if time.Since(repoListCacheTime) < repoListCacheTTL && len(repoListCache) > 0 {
-		return repoListCache
+		cached := repoListCache
+		repoListCacheMutex.RUnlock()
+		return cached
 	}
+	repoListCacheMutex.RUnlock()
 
 	repoMap := make(map[string]bool) // Use map to avoid duplicates
+	var repoMapMutex sync.Mutex
 	var repos []string
 
 	// 1. List local repositories from configured git folder
@@ -552,59 +560,80 @@ func listGitRepos() []string {
 		}
 	}
 
-	// 2. Fetch repositories from preferred GitHub organizations
+	// 2. Fetch repositories from preferred GitHub organizations concurrently
 	preferredOrgs := config.GetStringSlice("preferred_orgs")
+
+	var wg sync.WaitGroup
 	for _, org := range preferredOrgs {
 		if org == "" {
 			continue
 		}
 
-		// Use gh CLI to list repos in the organization
-		// gh repo list <org> --limit 1000 --json name -q '.[].name'
-		cmd := exec.Command("gh", "repo", "list", org, "--limit", "1000", "--json", "name", "-q", ".[].name")
-		output, err := cmd.Output()
-		if err != nil {
-			// Skip this org if gh command fails (not authenticated, org doesn't exist, etc.)
-			continue
-		}
+		wg.Add(1)
+		go func(organization string) {
+			defer wg.Done()
 
-		// Parse the output (one repo name per line)
-		lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-		for _, line := range lines {
-			repoName := strings.TrimSpace(line)
-			if repoName != "" && !repoMap[repoName] {
-				repoMap[repoName] = true
-				repos = append(repos, repoName)
+			// Use gh CLI to list repos in the organization
+			// gh repo list <org> --limit 1000 --json name -q '.[].name'
+			cmd := exec.Command("gh", "repo", "list", organization, "--limit", "1000", "--json", "name", "-q", ".[].name")
+			output, err := cmd.Output()
+			if err != nil {
+				// Skip this org if gh command fails (not authenticated, org doesn't exist, etc.)
+				return
 			}
-		}
+
+			// Parse the output (one repo name per line)
+			lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+
+			repoMapMutex.Lock()
+			for _, line := range lines {
+				repoName := strings.TrimSpace(line)
+				if repoName != "" && !repoMap[repoName] {
+					repoMap[repoName] = true
+					repos = append(repos, repoName)
+				}
+			}
+			repoMapMutex.Unlock()
+		}(org)
 	}
 
-	// Update cache
+	// Wait for all goroutines to complete
+	wg.Wait()
+
+	// Update cache with mutex protection
+	repoListCacheMutex.Lock()
 	repoListCache = repos
 	repoListCacheTime = time.Now()
+	repoListCacheMutex.Unlock()
 
 	return repos
 }
 
 // listBranchesForRepo returns a list of branches for a given repository
 func listBranchesForRepo(repoName string) []string {
-	// Check cache first
+	// Check cache first (with mutex protection)
+	branchListCacheMutex.RLock()
 	if entry, ok := branchListCache[repoName]; ok {
 		if time.Since(entry.fetchedAt) < branchListCacheTTL {
-			return entry.branches
+			cached := entry.branches
+			branchListCacheMutex.RUnlock()
+			return cached
 		}
 	}
+	branchListCacheMutex.RUnlock()
 
 	branches := []string{}
 
 	// Try GitHub API first (works even if not cloned locally)
 	ghBranches := listBranchesFromGitHub(repoName)
 	if len(ghBranches) > 0 {
-		// Update cache
+		// Update cache with mutex protection
+		branchListCacheMutex.Lock()
 		branchListCache[repoName] = branchCacheEntry{
 			branches:  ghBranches,
 			fetchedAt: time.Now(),
 		}
+		branchListCacheMutex.Unlock()
 		return ghBranches
 	}
 
@@ -657,12 +686,14 @@ func listBranchesForRepo(repoName string) []string {
 		}
 	}
 
-	// Update cache with local git results
+	// Update cache with local git results (with mutex protection)
 	if len(branches) > 0 {
+		branchListCacheMutex.Lock()
 		branchListCache[repoName] = branchCacheEntry{
 			branches:  branches,
 			fetchedAt: time.Now(),
 		}
+		branchListCacheMutex.Unlock()
 	}
 
 	return branches
@@ -672,32 +703,57 @@ func listBranchesForRepo(repoName string) []string {
 func listBranchesFromGitHub(repoName string) []string {
 	preferredOrgs := config.GetStringSlice("preferred_orgs")
 
+	// Use a channel to collect results from concurrent queries
+	results := make(chan []string, len(preferredOrgs))
+	var wg sync.WaitGroup
+
 	for _, org := range preferredOrgs {
 		if org == "" {
 			continue
 		}
 
-		// Use gh api to list branches for this repo in the org
-		// gh api repos/OWNER/REPO/branches --paginate --jq '.[].name'
-		cmd := exec.Command("gh", "api", fmt.Sprintf("repos/%s/%s/branches", org, repoName), "--paginate", "--jq", ".[].name")
-		output, err := cmd.Output()
-		if err != nil {
-			// Try next org if this fails
-			continue
-		}
+		wg.Add(1)
+		go func(organization string) {
+			defer wg.Done()
 
-		// Parse the output (one branch per line)
-		branches := []string{}
-		lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-		for _, line := range lines {
-			branch := strings.TrimSpace(line)
-			if branch != "" {
-				branches = append(branches, branch)
+			// Use gh api to list branches for this repo in the org
+			// gh api repos/OWNER/REPO/branches --paginate --jq '.[].name'
+			cmd := exec.Command("gh", "api", fmt.Sprintf("repos/%s/%s/branches", organization, repoName), "--paginate", "--jq", ".[].name")
+			output, err := cmd.Output()
+			if err != nil {
+				// Send empty result if this org fails
+				results <- []string{}
+				return
 			}
-		}
 
-		// Return branches from first org that has this repo
+			// Parse the output (one branch per line)
+			branches := []string{}
+			lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+			for _, line := range lines {
+				branch := strings.TrimSpace(line)
+				if branch != "" {
+					branches = append(branches, branch)
+				}
+			}
+
+			results <- branches
+		}(org)
+	}
+
+	// Close results channel when all goroutines complete
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// Return the first non-empty result
+	for branches := range results {
 		if len(branches) > 0 {
+			// Drain remaining results to avoid goroutine leaks
+			go func() {
+				for range results {
+				}
+			}()
 			return branches
 		}
 	}
