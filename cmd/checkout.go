@@ -589,8 +589,9 @@ func listGitRepos() []string {
 		}
 
 		// Use gh API to list repos in the organization with pagination
-		// gh api orgs/<org>/repos --paginate --jq '.[].name'
-		cmd := exec.Command("gh", "api", fmt.Sprintf("orgs/%s/repos", org), "--paginate", "--jq", ".[].name")
+		// Fetch up to 1000 repos (10 pages * 100 per page) to avoid overwhelming the API
+		// gh api orgs/<org>/repos?per_page=100 --paginate --page-limit 10 --jq '.[].name'
+		cmd := exec.Command("gh", "api", fmt.Sprintf("orgs/%s/repos?per_page=100", org), "--paginate", "--page-limit", "10", "--jq", ".[].name")
 		output, err := cmd.Output()
 		if err != nil {
 			// Skip this org if gh command fails (not authenticated, org doesn't exist, etc.)
