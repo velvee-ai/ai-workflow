@@ -194,9 +194,10 @@ func checkoutRepoBranch(repoName, branchName string) {
 		os.Exit(1)
 	}
 
-	// Switch to main and pull latest
-	if err := runGitCommand("switch", "main"); err != nil {
-		fmt.Fprintf(os.Stderr, "Error switching to main: %v\n", err)
+	// Switch to default branch and pull latest
+	defaultBranch := getDefaultBranch(gitRoot)
+	if err := runGitCommand("switch", defaultBranch); err != nil {
+		fmt.Fprintf(os.Stderr, "Error switching to %s: %v\n", defaultBranch, err)
 		os.Exit(1)
 	}
 
@@ -329,9 +330,10 @@ func runCheckoutBranch(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	// Switch to main and pull latest
-	if err := runGitCommand("switch", "main"); err != nil {
-		fmt.Fprintf(os.Stderr, "Error switching to main: %v\n", err)
+	// Switch to default branch and pull latest
+	defaultBranch := getDefaultBranch(gitRoot)
+	if err := runGitCommand("switch", defaultBranch); err != nil {
+		fmt.Fprintf(os.Stderr, "Error switching to %s: %v\n", defaultBranch, err)
 		os.Exit(1)
 	}
 
@@ -421,11 +423,8 @@ func runCheckoutNew(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	// Step 3: Get base branch from config
-	baseBranch := config.GetString("checkout_base_branch")
-	if baseBranch == "" {
-		baseBranch = "main"
-	}
+	// Step 3: Get base branch - try to detect dynamically
+	baseBranch := getDefaultBranch("")
 
 	// Step 4: Get base branch SHA
 	fmt.Printf("Fetching base branch '%s' SHA...\n", baseBranch)
@@ -830,7 +829,8 @@ func handleGitHubIssue(issueURL string) string {
 
 	// Create branch from GitHub issue using gh CLI
 	fmt.Printf("Creating branch from GitHub issue #%s...\n", issueNumber)
-	createCmd := exec.Command("gh", "issue", "develop", issueURL, "--checkout", "--base", "main")
+	defaultBranch := getDefaultBranch(".")
+	createCmd := exec.Command("gh", "issue", "develop", issueURL, "--checkout", "--base", defaultBranch)
 	createCmd.Stdout = os.Stdout
 	createCmd.Stderr = os.Stderr
 
@@ -847,8 +847,8 @@ func handleGitHubIssue(issueURL string) string {
 	// Get the current branch name
 	branchName := getCurrentBranch(".")
 
-	// Switch back to main for worktree creation
-	runGitCommand("switch", "main")
+	// Switch back to default branch for worktree creation
+	runGitCommand("switch", defaultBranch)
 
 	return branchName
 }
