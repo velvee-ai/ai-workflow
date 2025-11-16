@@ -32,8 +32,9 @@ Examples:
   work release myrepo --minor      # Increment minor version (v1.0.0 -> v1.1.0)
   work release myrepo --major      # Increment major version (v1.0.0 -> v2.0.0)
 `,
-	Args: cobra.ExactArgs(1),
-	Run:  runRelease,
+	Args:              cobra.ExactArgs(1),
+	ValidArgsFunction: completeGitRepos,
+	Run:               runRelease,
 }
 
 var (
