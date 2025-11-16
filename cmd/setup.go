@@ -66,6 +66,9 @@ func runSetup(cmd *cobra.Command, args []string) {
 	var ide string
 	var createDir bool
 
+	// Set the current IDE as default
+	ide = currentIDE
+
 	// Create the fancy form
 	form := huh.NewForm(
 		huh.NewGroup(
@@ -108,9 +111,6 @@ func runSetup(cmd *cobra.Command, args []string) {
 				Value(&ide),
 		),
 	)
-
-	// Set the current IDE as default
-	ide = currentIDE
 
 	// Run the form
 	err := form.Run()

@@ -25,7 +25,6 @@ A powerful CLI tool for orchestrating git workflows, featuring git worktree mana
 │   ├── commit.go        # Streamlined commit and PR creation
 │   ├── config.go        # Configuration management
 │   ├── setup.go         # Setup wizard and health check (doctor)
-│   ├── remote.go        # Open repository in browser
 │   ├── completion.go    # Shell completion generation
 │   └── git.go           # Basic git operations
 ├── pkg/
@@ -155,7 +154,6 @@ work config path
 - `default_git_folder` - Where to clone repositories (e.g., `~/git`)
 - `preferred_orgs` - GitHub organizations to filter in autocomplete (JSON array)
 - `preferred_ide` - IDE to open after checkout (`vscode`, `cursor`, or `none`)
-- `default_remote` - Default git remote name (default: `origin`)
 
 ### Setup and Health Check
 
@@ -264,24 +262,19 @@ This command automatically:
 - Helpful error messages if `gh` CLI is not installed
 - Handles upstream branch tracking automatically
 
-### Open Repository in Browser
+### Cache Management
 
-Quickly open your repository in a web browser:
+Control the autocomplete cache for repositories and branches:
 
 ```bash
-# Open the current repository in your browser
-work remote
+# Clear cache and fetch fresh data
+work cache-clear checkout myrepo branch-name
+
+# Or just clear the cache
+work cache-clear checkout <TAB>  # Autocomplete with fresh data
 ```
 
-**Features:**
-
-- Automatically detects git remote URL
-- Opens the current branch on GitHub when possible (e.g., `https://github.com/user/repo/tree/feature-branch`)
-- Falls back to repository root if not on a named branch (detached HEAD)
-- Converts SSH and HTTPS URLs to browser-friendly format
-- Works with any git hosting service (GitHub, GitLab, Bitbucket, etc.)
-- Handles branch names with special characters (e.g., `feature/new-api`)
-- Configurable default remote via `work config set default_remote <name>`
+The autocomplete system caches repository and branch lists for 5 minutes to provide fast responses. Use `cache-clear` when you need to see newly created repositories or branches immediately.
 
 ### Shell Completion
 
@@ -468,6 +461,7 @@ Quick reference for all available commands:
 | `work checkout branch <issue-url>` | Create branch from GitHub issue                    |
 | `work commit <message>`         | Add, commit, pull, push, and create PR                |
 | `work remote`                   | Open repository in browser                            |
+| `work cache-clear checkout`     | Clear autocomplete cache and checkout                 |
 | `work completion <shell>`       | Generate shell completion script                      |
 | `work git status`               | Show git status                                       |
 | `work git branch`               | List git branches                                     |
