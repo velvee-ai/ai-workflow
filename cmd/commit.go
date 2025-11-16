@@ -139,8 +139,11 @@ func pushWithRetry(branch string) error {
 
 // createPullRequest creates a pull request using gh CLI
 func createPullRequest(branch string, commitMessage string) error {
+	// Get default branch for comparison
+	defaultBranch := getDefaultBranch(".")
+
 	// Get all commits in this branch that aren't in the base branch
-	commitsCmd := exec.Command("git", "log", "origin/main..HEAD", "--oneline")
+	commitsCmd := exec.Command("git", "log", fmt.Sprintf("origin/%s..HEAD", defaultBranch), "--oneline")
 	commitsOutput, err := commitsCmd.Output()
 	if err != nil {
 		// If we can't get commits, just use the latest commit message

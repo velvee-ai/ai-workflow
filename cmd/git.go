@@ -1,11 +1,15 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
+	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/velvee-ai/ai-workflow/pkg/config"
+	"github.com/velvee-ai/ai-workflow/pkg/gitexec"
 )
 
 var gitCmd = &cobra.Command{
@@ -45,6 +49,26 @@ func runGitCommand(args ...string) error {
 	gitCmd.Stderr = os.Stderr
 	gitCmd.Stdin = os.Stdin
 	return gitCmd.Run()
+}
+
+// getDefaultBranch returns the repository's default branch name.
+// It attempts to detect it using gh CLI, falling back to config, then "main".
+func getDefaultBranch(workDir string) string {
+	// Try to detect using gitexec package with gh CLI
+	runner := gitexec.New(5 * time.Second)
+	ctx := context.Background()
+
+	if branch, err := runner.GetDefaultBranch(ctx, workDir); err == nil && branch != "" {
+		return branch
+	}
+
+	// Fall back to configured checkout_base_branch
+	if baseBranch := config.GetString("checkout_base_branch"); baseBranch != "" {
+		return baseBranch
+	}
+
+	// Final fallback to "main"
+	return "main"
 }
 
 func init() {
