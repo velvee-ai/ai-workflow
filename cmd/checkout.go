@@ -664,8 +664,8 @@ func listBranchesForRepo(repoName string) []string {
 	pruneCmd := exec.Command("git", "-C", gitRoot, "remote", "prune", "origin")
 	pruneCmd.Run() // Ignore errors, continue even if prune fails
 
-	// List remote branches using git branch -r
-	cmd := exec.Command("git", "-C", gitRoot, "branch", "-r")
+	// List remote branches using git branch -r sorted by commit date (most recent first)
+	cmd := exec.Command("git", "-C", gitRoot, "branch", "-r", "--sort=-committerdate")
 	output, err := cmd.Output()
 	if err != nil {
 		return []string{}
@@ -699,7 +699,7 @@ func listBranchesForRepo(repoName string) []string {
 	return branches
 }
 
-// listBranchesFromGitHub fetches branches from GitHub using gh CLI
+// listBranchesFromGitHub fetches branches from GitHub using gh CLI, sorted by date
 func listBranchesFromGitHub(repoName string) []string {
 	preferredOrgs := config.GetStringSlice("preferred_orgs")
 
@@ -716,9 +716,11 @@ func listBranchesFromGitHub(repoName string) []string {
 		go func(organization string) {
 			defer wg.Done()
 
-			// Use gh api to list branches for this repo in the org
-			// gh api repos/OWNER/REPO/branches --paginate --jq '.[].name'
-			cmd := exec.Command("gh", "api", fmt.Sprintf("repos/%s/%s/branches", organization, repoName), "--paginate", "--jq", ".[].name")
+			// Use gh api to list branches sorted by last updated date
+			// We use a jq expression to sort by commit date and extract names
+			cmd := exec.Command("gh", "api", fmt.Sprintf("repos/%s/%s/branches", organization, repoName),
+				"--paginate",
+				"--jq", "sort_by(.commit.commit.committer.date) | reverse | .[].name")
 			output, err := cmd.Output()
 			if err != nil {
 				// Send empty result if this org fails
@@ -726,7 +728,7 @@ func listBranchesFromGitHub(repoName string) []string {
 				return
 			}
 
-			// Parse the output (one branch per line)
+			// Parse the output (one branch per line, already sorted by date)
 			branches := []string{}
 			lines := strings.Split(strings.TrimSpace(string(output)), "\n")
 			for _, line := range lines {
