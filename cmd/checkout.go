@@ -573,9 +573,9 @@ func listGitRepos() []string {
 			continue
 		}
 
-		// Use gh CLI to list repos in the organization
-		// gh repo list <org> --limit 1000 --json name -q '.[].name'
-		cmd := exec.Command("gh", "repo", "list", org, "--limit", "1000", "--json", "name", "-q", ".[].name")
+		// Use gh API to list repos in the organization with pagination
+		// gh api orgs/<org>/repos --paginate --jq '.[].name'
+		cmd := exec.Command("gh", "api", fmt.Sprintf("orgs/%s/repos", org), "--paginate", "--jq", ".[].name")
 		output, err := cmd.Output()
 		if err != nil {
 			// Skip this org if gh command fails (not authenticated, org doesn't exist, etc.)
