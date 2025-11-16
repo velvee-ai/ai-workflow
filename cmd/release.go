@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/velvee-ai/ai-workflow/pkg/config"
 	"github.com/velvee-ai/ai-workflow/pkg/services"
 )
 
@@ -170,30 +172,37 @@ func runRelease(cmd *cobra.Command, args []string) {
 
 // getRepoWorkDir returns the working directory for a repository
 func getRepoWorkDir(repoName string) (string, error) {
-	// First, try to find the main worktree directory
-	mainDir := fmt.Sprintf("%s/main", repoName)
+	// Get git folder from config
+	gitFolder := config.GetString("default_git_folder")
+	if gitFolder == "" {
+		return "", fmt.Errorf("default_git_folder not configured. Run: work config set default_git_folder ~/git")
+	}
+
+	// Expand home directory if needed
+	if strings.HasPrefix(gitFolder, "~/") {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("could not get home directory: %w", err)
+		}
+		gitFolder = filepath.Join(homeDir, gitFolder[2:])
+	}
+
+	// Build paths
+	containerRoot := filepath.Join(gitFolder, repoName)
+
+	// First, try to find the main worktree directory (for worktree-based repos)
+	mainDir := filepath.Join(containerRoot, "main")
 	if _, err := os.Stat(mainDir); err == nil {
 		return mainDir, nil
 	}
 
-	// Try the repo name directly (in case it's a simple clone)
-	if _, err := os.Stat(repoName); err == nil {
-		return repoName, nil
+	// Try the container root directly (for simple clones)
+	if _, err := os.Stat(containerRoot); err == nil {
+		return containerRoot, nil
 	}
 
-	// Try current directory if repo name matches
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-
-	// Check if current directory contains the repo name
-	if strings.Contains(cwd, repoName) {
-		return cwd, nil
-	}
-
-	return "", fmt.Errorf("repository directory not found for %s (tried: %s/main, %s, current directory)",
-		repoName, repoName, repoName)
+	return "", fmt.Errorf("repository directory not found for %s (tried: %s, %s)",
+		repoName, mainDir, containerRoot)
 }
 
 // getLatestRelease queries GitHub for the latest release
