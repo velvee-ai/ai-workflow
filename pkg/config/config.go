@@ -14,7 +14,6 @@ type Config struct {
 	DefaultGitFolder   string   `mapstructure:"default_git_folder" json:"default_git_folder"`
 	PreferredOrgs      []string `mapstructure:"preferred_orgs" json:"preferred_orgs"`
 	PreferredIDE       string   `mapstructure:"preferred_ide" json:"preferred_ide"`
-	DefaultRemote      string   `mapstructure:"default_remote" json:"default_remote"`
 	CheckoutBaseBranch string   `mapstructure:"checkout_base_branch" json:"checkout_base_branch"`
 	CacheTTL           string   `mapstructure:"cache_ttl" json:"cache_ttl"` // Duration string like "5m"
 }
@@ -67,8 +66,7 @@ func setDefaults() {
 	defaultGitFolder := filepath.Join(homeDir, "git")
 	viper.SetDefault("default_git_folder", defaultGitFolder)
 	viper.SetDefault("preferred_orgs", []string{"myorg"})
-	viper.SetDefault("preferred_ide", "none")    // Options: "vscode", "cursor", "none"
-	viper.SetDefault("default_remote", "origin") // Default git remote name
+	viper.SetDefault("preferred_ide", "none") // Options: "vscode", "cursor", "none"
 	viper.SetDefault("checkout_base_branch", "main")
 	viper.SetDefault("cache_ttl", "5m") // 5 minutes
 }
@@ -118,7 +116,6 @@ func Save(cfg *Config) error {
 	viper.Set("default_git_folder", cfg.DefaultGitFolder)
 	viper.Set("preferred_orgs", cfg.PreferredOrgs)
 	viper.Set("preferred_ide", cfg.PreferredIDE)
-	viper.Set("default_remote", cfg.DefaultRemote)
 	viper.Set("checkout_base_branch", cfg.CheckoutBaseBranch)
 	viper.Set("cache_ttl", cfg.CacheTTL)
 
