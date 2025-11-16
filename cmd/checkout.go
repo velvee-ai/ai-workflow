@@ -920,6 +920,18 @@ func runPostCheckoutActions(worktreePath string) {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
+		// Pass context to the script via environment variables
+		// This allows scripts to dynamically reference the correct paths
+		absWorktreePath, _ := filepath.Abs(worktreePath)
+		containerRoot := filepath.Dir(absWorktreePath)
+		branchName := getCurrentBranch(worktreePath)
+
+		cmd.Env = append(os.Environ(),
+			fmt.Sprintf("WORK_WORKTREE_PATH=%s", absWorktreePath),
+			fmt.Sprintf("WORK_BRANCH_NAME=%s", branchName),
+			fmt.Sprintf("WORK_CONTAINER_ROOT=%s", containerRoot),
+		)
+
 		if err := cmd.Run(); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: .work/post_checkout.sh failed: %v\n", err)
 			// Do NOT fall back to IDE - repository controls its own flow

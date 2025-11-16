@@ -391,8 +391,18 @@ Repositories can provide custom automation via a `.work/post_checkout.sh` script
 - If the script fails, a warning is printed, but the checkout is still considered successful
 - If the script does not exist, `work` falls back to opening the configured IDE (VSCode/Cursor)
 
+**Environment Variables:**
+
+The script receives the following environment variables to help with path resolution:
+- `WORK_WORKTREE_PATH`: Absolute path to the current worktree (e.g., `/Users/user/git/myrepo/feature-branch`)
+- `WORK_BRANCH_NAME`: Name of the current branch (e.g., `feature-branch`)
+- `WORK_CONTAINER_ROOT`: Absolute path to the repository container folder (e.g., `/Users/user/git/myrepo`)
+
+These variables ensure scripts can correctly reference paths specific to the current worktree, avoiding issues with hardcoded paths or references to other worktrees.
+
 **Example use cases:**
 - Install dependencies automatically (`npm install`, `go mod download`, etc.)
+- Set up Python virtual environments in the correct worktree
 - Run initialization scripts or setup tasks
 - Open the IDE as the last step if desired
 
@@ -402,14 +412,22 @@ Repositories can provide custom automation via a `.work/post_checkout.sh` script
 #!/bin/bash
 # .work/post_checkout.sh
 
-echo "Installing dependencies..."
+echo "Installing dependencies in $WORK_WORKTREE_PATH..."
 npm install
+
+# Set up Python virtual environment in the current worktree
+if [ -f "requirements.txt" ]; then
+    echo "Setting up Python virtual environment..."
+    python3 -m venv "${WORK_WORKTREE_PATH}/.venv"
+    source "${WORK_WORKTREE_PATH}/.venv/bin/activate"
+    pip install -r requirements.txt
+fi
 
 echo "Running database migrations..."
 npm run db:migrate
 
 # Optional: open IDE after automation
-cursor .
+cursor "$WORK_WORKTREE_PATH"
 ```
 
 This hook allows teams to standardize their development environment setup while maintaining the convenience of automatic IDE opening when no custom script is needed.
