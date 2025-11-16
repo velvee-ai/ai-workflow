@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/velvee-ai/ai-workflow/pkg/config"
+	"github.com/velvee-ai/ai-workflow/pkg/repohistory"
 )
 
 // Cache for repo list and branch lists to speed up autocomplete
@@ -167,6 +168,13 @@ func checkoutRepoBranch(repoName, branchName string) {
 	containerRoot := filepath.Join(gitFolder, repoName)
 	gitRoot := filepath.Join(containerRoot, "main")
 
+	// Track repo access for autocomplete history
+	if configDir, err := config.GetConfigDir(); err == nil {
+		history := repohistory.GetInstance(configDir)
+		// Ignore error - tracking is best-effort
+		_ = history.RecordAccess(repoName)
+	}
+
 	// Check if repo exists, if not, try to auto-clone
 	if _, err := os.Stat(gitRoot); os.IsNotExist(err) {
 		fmt.Printf("Repository '%s' not found locally, attempting to clone...\n", repoName)
@@ -268,6 +276,13 @@ func runCheckoutRoot(cmd *cobra.Command, args []string) {
 	if repoName == "" {
 		fmt.Fprintf(os.Stderr, "Error: Could not extract repository name from URL\n")
 		os.Exit(1)
+	}
+
+	// Track repo access for autocomplete history
+	if configDir, err := config.GetConfigDir(); err == nil {
+		history := repohistory.GetInstance(configDir)
+		// Ignore error - tracking is best-effort
+		_ = history.RecordAccess(repoName)
 	}
 
 	// Get git folder from config
@@ -723,8 +738,31 @@ func listBranchesFromGitHub(repoName string) []string {
 func completeGitRepos(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	// First argument: complete repo names
 	if len(args) == 0 {
-		repos := listGitRepos()
-		return repos, cobra.ShellCompDirectiveNoFileComp
+		// Get config directory for history
+		configDir, err := config.GetConfigDir()
+		if err != nil {
+			// Fallback to basic completion if config unavailable
+			repos := listGitRepos()
+			if len(repos) > 30 {
+				repos = repos[:30]
+			}
+			return repos, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		// Get recently used repos (limit to 30 for terminal display)
+		history := repohistory.GetInstance(configDir)
+		recentRepos := history.GetRecentRepos(30)
+
+		// If no history, fall back to first 30 from full list
+		if len(recentRepos) == 0 {
+			allRepos := listGitRepos()
+			if len(allRepos) > 30 {
+				return allRepos[:30], cobra.ShellCompDirectiveNoFileComp
+			}
+			return allRepos, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		return recentRepos, cobra.ShellCompDirectiveNoFileComp
 	}
 
 	// Second argument: complete branch names for the specified repo
