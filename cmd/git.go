@@ -71,6 +71,42 @@ func getDefaultBranch(workDir string) string {
 	return "main"
 }
 
+// getRemoteDefaultBranch queries a specific remote repository's default branch using GitHub API.
+// This is useful when you need to get the default branch before cloning the repository.
+func getRemoteDefaultBranch(owner, repo string) string {
+	// Try to query the specific repository using GitHub API
+	cmd := exec.Command("gh", "api", fmt.Sprintf("repos/%s/%s", owner, repo), "--jq", ".default_branch")
+	output, err := cmd.Output()
+	if err == nil {
+		branch := string(output)
+		// Trim whitespace and newlines
+		branch = trimSpace(branch)
+		if branch != "" {
+			return branch
+		}
+	}
+
+	// Fall back to configured checkout_base_branch
+	if baseBranch := config.GetString("checkout_base_branch"); baseBranch != "" {
+		return baseBranch
+	}
+
+	// Final fallback to "main"
+	return "main"
+}
+
+// trimSpace removes leading and trailing whitespace and newlines
+func trimSpace(s string) string {
+	// Remove common whitespace characters
+	result := ""
+	for _, c := range s {
+		if c != ' ' && c != '\t' && c != '\n' && c != '\r' {
+			result += string(c)
+		}
+	}
+	return result
+}
+
 func init() {
 	// Add subcommands to git command
 	gitCmd.AddCommand(gitStatusCmd)
