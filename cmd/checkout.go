@@ -423,8 +423,8 @@ func runCheckoutNew(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	// Step 3: Get base branch - try to detect dynamically
-	baseBranch := getDefaultBranch("")
+	// Step 3: Get base branch - query the specific remote repository
+	baseBranch := getRemoteDefaultBranch(owner, repoName)
 
 	// Step 4: Get base branch SHA
 	fmt.Printf("Fetching base branch '%s' SHA...\n", baseBranch)
