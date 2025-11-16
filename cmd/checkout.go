@@ -85,19 +85,6 @@ This creates a worktree in the container folder:
 	Run:  runCheckoutBranch,
 }
 
-var checkoutCacheClearCmd = &cobra.Command{
-	Use:   "cache-clear",
-	Short: "Clear autocomplete cache for repos and branches",
-	Long: `Clear the cached repository and branch lists used for autocomplete.
-
-This is useful when you want to immediately see new repositories or branches
-without waiting for the cache to expire (default: 5 minutes).
-
-Example:
-  work checkout cache-clear`,
-	Run: runCacheClear,
-}
-
 var checkoutNewCmd = &cobra.Command{
 	Use:   "new <repo> <branch>",
 	Short: "Create a remote branch via GitHub and checkout locally",
@@ -931,24 +918,11 @@ func runPostCheckoutActions(worktreePath string) {
 	openInIDE(worktreePath)
 }
 
-func runCacheClear(cmd *cobra.Command, args []string) {
-	// Clear repo list cache
-	repoListCache = []string{}
-	repoListCacheTime = time.Time{}
-
-	// Clear branch list cache
-	branchListCache = make(map[string]branchCacheEntry)
-
-	fmt.Println("Cache cleared successfully!")
-	fmt.Println("Next autocomplete will fetch fresh data from GitHub and local repos.")
-}
-
 func init() {
 	// Add subcommands to checkout command
 	checkoutCmd.AddCommand(checkoutRootCmd)
 	checkoutCmd.AddCommand(checkoutBranchCmd)
 	checkoutCmd.AddCommand(checkoutNewCmd)
-	checkoutCmd.AddCommand(checkoutCacheClearCmd)
 
 	// Register checkout command with root
 	rootCmd.AddCommand(checkoutCmd)

@@ -26,7 +26,6 @@ A powerful CLI tool for orchestrating git workflows, featuring git worktree mana
 │   ├── config.go        # Configuration management
 │   ├── setup.go         # Setup wizard and health check (doctor)
 │   ├── completion.go    # Shell completion generation
-│   ├── cache_clear.go   # Cache management
 │   └── git.go           # Basic git operations
 ├── pkg/
 │   ├── cache/           # Generic TTL cache implementation
@@ -228,7 +227,6 @@ work checkout branch https://github.com/user/repo/issues/42
 - Repository names from your configured GitHub organizations
 - Branch names for the selected repository
 - Caching for fast responses (5-minute TTL)
-- Use `work cache-clear checkout` to force refresh
 
 **Benefits of this workflow:**
 
@@ -399,7 +397,6 @@ To provide fast autocomplete while keeping data fresh:
 
 - Repository lists are cached for 5 minutes
 - Branch lists are cached per-repository for 5 minutes
-- Use `work cache-clear checkout` to force refresh
 - Cache is stored in memory (cleared on exit)
 
 ## Contributing
@@ -463,6 +460,7 @@ Quick reference for all available commands:
 | `work checkout branch <branch>` | Checkout branch in current repo using worktree        |
 | `work checkout branch <issue-url>` | Create branch from GitHub issue                    |
 | `work commit <message>`         | Add, commit, pull, push, and create PR                |
+| `work remote`                   | Open repository in browser                            |
 | `work cache-clear checkout`     | Clear autocomplete cache and checkout                 |
 | `work completion <shell>`       | Generate shell completion script                      |
 | `work git status`               | Show git status                                       |
