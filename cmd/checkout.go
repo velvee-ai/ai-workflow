@@ -8,20 +8,13 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/velvee-ai/ai-workflow/pkg/cache"
 	"github.com/velvee-ai/ai-workflow/pkg/config"
 )
 
-// Cache for repo list to speed up autocomplete
-var (
-	repoListCache      []string
-	repoListCacheTime  time.Time
-	repoListCacheTTL   = 5 * time.Minute
-	repoListCacheMutex sync.RWMutex
-)
+// No in-memory cache needed - bbolt is fast enough for direct reads
 
 var checkoutCmd = &cobra.Command{
 	Use:   "checkout [repo] [branch]",
@@ -508,15 +501,6 @@ func cloneRepository(gitURL, repoName, gitFolder string) error {
 
 // listGitRepos returns a list of git repositories from local folder and persistent cache
 func listGitRepos() []string {
-	// Check if in-memory cache is still valid (with mutex protection)
-	repoListCacheMutex.RLock()
-	if time.Since(repoListCacheTime) < repoListCacheTTL && len(repoListCache) > 0 {
-		cached := repoListCache
-		repoListCacheMutex.RUnlock()
-		return cached
-	}
-	repoListCacheMutex.RUnlock()
-
 	repoMap := make(map[string]bool) // Use map to avoid duplicates
 	var repos []string
 
@@ -562,12 +546,6 @@ func listGitRepos() []string {
 			}
 		}
 	}
-
-	// Update in-memory cache with mutex protection
-	repoListCacheMutex.Lock()
-	repoListCache = repos
-	repoListCacheTime = time.Now()
-	repoListCacheMutex.Unlock()
 
 	return repos
 }

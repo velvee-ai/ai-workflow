@@ -400,13 +400,13 @@ To provide fast autocomplete:
 - **Repository cache**: Persistent storage in `~/.work/cache/work.db` (bbolt database)
   - Populated by `work reload` command
   - Also includes locally cloned repositories
-  - 5-minute in-memory cache for instant responses during active sessions
+  - bbolt provides fast reads (no in-memory cache needed)
 - **Branch data**: No caching, always fresh
   - Fetched from GitHub API on every tab completion
   - Shows the 100 most recently updated branches
   - Falls back to local git repo if GitHub is unavailable
 
-This approach ensures repository autocomplete is instant while branch data is always current.
+This approach keeps autocomplete fast while ensuring data is always current.
 
 ## Contributing
 
