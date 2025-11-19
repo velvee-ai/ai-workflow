@@ -688,10 +688,10 @@ func listBranchesFromGitHub(repoName string) []string {
 			defer wg.Done()
 
 			// Use gh api to list branches sorted by last updated date
-			// We use a jq expression to sort by commit date and extract names
+			// Fetch all, sort by commit date, limit to 100 most recent, extract names
 			cmd := exec.Command("gh", "api", fmt.Sprintf("repos/%s/%s/branches", organization, repoName),
 				"--paginate",
-				"--jq", "sort_by(.commit.commit.committer.date) | reverse | .[].name")
+				"--jq", "sort_by(.commit.commit.committer.date) | reverse | .[0:100] | .[].name")
 			output, err := cmd.Output()
 			if err != nil {
 				// Send empty result if this org fails
