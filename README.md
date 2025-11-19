@@ -224,10 +224,10 @@ work checkout branch https://github.com/user/repo/issues/42
 
 **Autocomplete Features:**
 
-- Repository names from your configured GitHub organizations (cached)
-- Branch names for the selected repository (fetched from GitHub on-demand)
+- Repository names from your configured GitHub organizations (cached persistently)
+- Branch names for the selected repository (fetched fresh from GitHub on every tab)
 - Run `work reload` to refresh repository cache
-- 5-minute in-memory cache for branches to reduce API calls
+- Always shows up-to-date branch information
 
 **Benefits of this workflow:**
 
@@ -276,7 +276,7 @@ The repository cache is stored in `~/.work/cache/work.db` (a bbolt database). Ru
 - After adding new repositories to GitHub
 - Periodically to keep your repository list fresh
 
-Branches are fetched directly from GitHub during tab completion, with a 5-minute in-memory cache to reduce API calls during active sessions.
+Branches are fetched fresh from GitHub on every tab completion, ensuring you always see the latest branch information.
 
 ### Shell Completion
 
@@ -400,12 +400,13 @@ To provide fast autocomplete:
 - **Repository cache**: Persistent storage in `~/.work/cache/work.db` (bbolt database)
   - Populated by `work reload` command
   - Also includes locally cloned repositories
-- **Branch cache**: In-memory only, 5-minute TTL
-  - Fetched from GitHub API on first tab completion
-  - Cached for 5 minutes to reduce repeated API calls
+  - 5-minute in-memory cache for instant responses during active sessions
+- **Branch data**: No caching, always fresh
+  - Fetched from GitHub API on every tab completion
+  - Shows the 100 most recently updated branches
   - Falls back to local git repo if GitHub is unavailable
 
-This approach balances performance with up-to-date branch information.
+This approach ensures repository autocomplete is instant while branch data is always current.
 
 ## Contributing
 

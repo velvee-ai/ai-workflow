@@ -15,21 +15,13 @@ import (
 	"github.com/velvee-ai/ai-workflow/pkg/config"
 )
 
-// Cache for repo list and branch lists to speed up autocomplete
+// Cache for repo list to speed up autocomplete
 var (
 	repoListCache      []string
 	repoListCacheTime  time.Time
 	repoListCacheTTL   = 5 * time.Minute
 	repoListCacheMutex sync.RWMutex
-	branchListCache    = make(map[string]branchCacheEntry)
-	branchListCacheTTL = 5 * time.Minute
-	branchListCacheMutex sync.RWMutex
 )
-
-type branchCacheEntry struct {
-	branches  []string
-	fetchedAt time.Time
-}
 
 var checkoutCmd = &cobra.Command{
 	Use:   "checkout [repo] [branch]",
@@ -582,29 +574,11 @@ func listGitRepos() []string {
 
 // listBranchesForRepo returns a list of branches for a given repository
 func listBranchesForRepo(repoName string) []string {
-	// Check in-memory cache first (with mutex protection)
-	branchListCacheMutex.RLock()
-	if entry, ok := branchListCache[repoName]; ok {
-		if time.Since(entry.fetchedAt) < branchListCacheTTL {
-			cached := entry.branches
-			branchListCacheMutex.RUnlock()
-			return cached
-		}
-	}
-	branchListCacheMutex.RUnlock()
-
 	branches := []string{}
 
-	// Try GitHub API first (works even if not cloned locally)
+	// Fetch from GitHub API (always fresh data)
 	ghBranches := listBranchesFromGitHub(repoName)
 	if len(ghBranches) > 0 {
-		// Update in-memory cache with mutex protection
-		branchListCacheMutex.Lock()
-		branchListCache[repoName] = branchCacheEntry{
-			branches:  ghBranches,
-			fetchedAt: time.Now(),
-		}
-		branchListCacheMutex.Unlock()
 		return ghBranches
 	}
 
@@ -655,16 +629,6 @@ func listBranchesForRepo(repoName string) []string {
 			branchMap[branch] = true
 			branches = append(branches, branch)
 		}
-	}
-
-	// Update in-memory cache with local git results (with mutex protection)
-	if len(branches) > 0 {
-		branchListCacheMutex.Lock()
-		branchListCache[repoName] = branchCacheEntry{
-			branches:  branches,
-			fetchedAt: time.Now(),
-		}
-		branchListCacheMutex.Unlock()
 	}
 
 	return branches
