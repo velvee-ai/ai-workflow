@@ -8,27 +8,13 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/velvee-ai/ai-workflow/pkg/cache"
 	"github.com/velvee-ai/ai-workflow/pkg/config"
 )
 
-// Cache for repo list and branch lists to speed up autocomplete
-var (
-	repoListCache      []string
-	repoListCacheTime  time.Time
-	repoListCacheTTL   = 5 * time.Minute
-	repoListCacheMutex sync.RWMutex
-	branchListCache    = make(map[string]branchCacheEntry)
-	branchListCacheTTL = 5 * time.Minute
-	branchListCacheMutex sync.RWMutex
-)
-
-type branchCacheEntry struct {
-	branches  []string
-	fetchedAt time.Time
-}
+// No in-memory cache needed - bbolt is fast enough for direct reads
 
 var checkoutCmd = &cobra.Command{
 	Use:   "checkout [repo] [branch]",
@@ -513,19 +499,9 @@ func cloneRepository(gitURL, repoName, gitFolder string) error {
 	return nil
 }
 
-// listGitRepos returns a list of git repositories from local folder and GitHub orgs
+// listGitRepos returns a list of git repositories from local folder and persistent cache
 func listGitRepos() []string {
-	// Check if cache is still valid (with mutex protection)
-	repoListCacheMutex.RLock()
-	if time.Since(repoListCacheTime) < repoListCacheTTL && len(repoListCache) > 0 {
-		cached := repoListCache
-		repoListCacheMutex.RUnlock()
-		return cached
-	}
-	repoListCacheMutex.RUnlock()
-
 	repoMap := make(map[string]bool) // Use map to avoid duplicates
-	var repoMapMutex sync.Mutex
 	var repos []string
 
 	// 1. List local repositories from configured git folder
@@ -560,80 +536,27 @@ func listGitRepos() []string {
 		}
 	}
 
-	// 2. Fetch repositories from preferred GitHub organizations concurrently
-	preferredOrgs := config.GetStringSlice("preferred_orgs")
-
-	var wg sync.WaitGroup
-	for _, org := range preferredOrgs {
-		if org == "" {
-			continue
+	// 2. Load repositories from persistent cache (populated by 'work reload')
+	cachedRepos, err := cache.LoadRepoCache()
+	if err == nil && len(cachedRepos) > 0 {
+		for _, repoName := range cachedRepos {
+			if !repoMap[repoName] {
+				repoMap[repoName] = true
+				repos = append(repos, repoName)
+			}
 		}
-
-		wg.Add(1)
-		go func(organization string) {
-			defer wg.Done()
-
-			// Use gh CLI to list repos in the organization
-			// gh repo list <org> --limit 1000 --json name -q '.[].name'
-			cmd := exec.Command("gh", "repo", "list", organization, "--limit", "1000", "--json", "name", "-q", ".[].name")
-			output, err := cmd.Output()
-			if err != nil {
-				// Skip this org if gh command fails (not authenticated, org doesn't exist, etc.)
-				return
-			}
-
-			// Parse the output (one repo name per line)
-			lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-
-			repoMapMutex.Lock()
-			for _, line := range lines {
-				repoName := strings.TrimSpace(line)
-				if repoName != "" && !repoMap[repoName] {
-					repoMap[repoName] = true
-					repos = append(repos, repoName)
-				}
-			}
-			repoMapMutex.Unlock()
-		}(org)
 	}
-
-	// Wait for all goroutines to complete
-	wg.Wait()
-
-	// Update cache with mutex protection
-	repoListCacheMutex.Lock()
-	repoListCache = repos
-	repoListCacheTime = time.Now()
-	repoListCacheMutex.Unlock()
 
 	return repos
 }
 
 // listBranchesForRepo returns a list of branches for a given repository
 func listBranchesForRepo(repoName string) []string {
-	// Check cache first (with mutex protection)
-	branchListCacheMutex.RLock()
-	if entry, ok := branchListCache[repoName]; ok {
-		if time.Since(entry.fetchedAt) < branchListCacheTTL {
-			cached := entry.branches
-			branchListCacheMutex.RUnlock()
-			return cached
-		}
-	}
-	branchListCacheMutex.RUnlock()
-
 	branches := []string{}
 
-	// Try GitHub API first (works even if not cloned locally)
+	// Fetch from GitHub API (always fresh data)
 	ghBranches := listBranchesFromGitHub(repoName)
 	if len(ghBranches) > 0 {
-		// Update cache with mutex protection
-		branchListCacheMutex.Lock()
-		branchListCache[repoName] = branchCacheEntry{
-			branches:  ghBranches,
-			fetchedAt: time.Now(),
-		}
-		branchListCacheMutex.Unlock()
 		return ghBranches
 	}
 
@@ -686,16 +609,6 @@ func listBranchesForRepo(repoName string) []string {
 		}
 	}
 
-	// Update cache with local git results (with mutex protection)
-	if len(branches) > 0 {
-		branchListCacheMutex.Lock()
-		branchListCache[repoName] = branchCacheEntry{
-			branches:  branches,
-			fetchedAt: time.Now(),
-		}
-		branchListCacheMutex.Unlock()
-	}
-
 	return branches
 }
 
@@ -717,10 +630,10 @@ func listBranchesFromGitHub(repoName string) []string {
 			defer wg.Done()
 
 			// Use gh api to list branches sorted by last updated date
-			// We use a jq expression to sort by commit date and extract names
+			// Fetch all, sort by commit date, limit to 100 most recent, extract names
 			cmd := exec.Command("gh", "api", fmt.Sprintf("repos/%s/%s/branches", organization, repoName),
 				"--paginate",
-				"--jq", "sort_by(.commit.commit.committer.date) | reverse | .[].name")
+				"--jq", "sort_by(.commit.commit.committer.date) | reverse | .[0:100] | .[].name")
 			output, err := cmd.Output()
 			if err != nil {
 				// Send empty result if this org fails

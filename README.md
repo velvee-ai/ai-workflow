@@ -224,9 +224,10 @@ work checkout branch https://github.com/user/repo/issues/42
 
 **Autocomplete Features:**
 
-- Repository names from your configured GitHub organizations
-- Branch names for the selected repository
-- Caching for fast responses (5-minute TTL)
+- Repository names from your configured GitHub organizations (cached persistently)
+- Branch names for the selected repository (fetched fresh from GitHub on every tab)
+- Run `work reload` to refresh repository cache
+- Always shows up-to-date branch information
 
 **Benefits of this workflow:**
 
@@ -264,17 +265,18 @@ This command automatically:
 
 ### Cache Management
 
-Control the autocomplete cache for repositories and branches:
+The autocomplete system uses a persistent cache for repository names and fetches branches on-demand from GitHub:
 
 ```bash
-# Clear cache and fetch fresh data
-work cache-clear checkout myrepo branch-name
-
-# Or just clear the cache
-work cache-clear checkout <TAB>  # Autocomplete with fresh data
+# Reload repository list from GitHub
+work reload
 ```
 
-The autocomplete system caches repository and branch lists for 5 minutes to provide fast responses. Use `cache-clear` when you need to see newly created repositories or branches immediately.
+The repository cache is stored in `~/.work/cache/work.db` (a bbolt database). Run `work reload`:
+- After adding new repositories to GitHub
+- Periodically to keep your repository list fresh
+
+Branches are fetched fresh from GitHub on every tab completion, ensuring you always see the latest branch information.
 
 ### Shell Completion
 
@@ -393,11 +395,18 @@ This hook allows teams to standardize their development environment setup while 
 
 ### Caching Strategy
 
-To provide fast autocomplete while keeping data fresh:
+To provide fast autocomplete:
 
-- Repository lists are cached for 5 minutes
-- Branch lists are cached per-repository for 5 minutes
-- Cache is stored in memory (cleared on exit)
+- **Repository cache**: Persistent storage in `~/.work/cache/work.db` (bbolt database)
+  - Populated by `work reload` command
+  - Also includes locally cloned repositories
+  - bbolt provides fast reads (no in-memory cache needed)
+- **Branch data**: No caching, always fresh
+  - Fetched from GitHub API on every tab completion
+  - Shows the 100 most recently updated branches
+  - Falls back to local git repo if GitHub is unavailable
+
+This approach keeps autocomplete fast while ensuring data is always current.
 
 ## Contributing
 
@@ -454,6 +463,7 @@ Quick reference for all available commands:
 | `work config get <key>`         | Get a specific configuration value                    |
 | `work config set <key> <value>` | Set a configuration value                             |
 | `work config path`              | Show configuration file path                          |
+| `work reload`                   | Reload repository list from GitHub                    |
 | `work checkout <repo> <branch>` | Checkout or create a git worktree (with autocomplete) |
 | `work checkout new <repo> <branch>` | Create remote branch via GitHub and checkout locally |
 | `work checkout root <url>`      | Clone a repository with worktree-ready structure      |
@@ -461,7 +471,6 @@ Quick reference for all available commands:
 | `work checkout branch <issue-url>` | Create branch from GitHub issue                    |
 | `work commit <message>`         | Add, commit, pull, push, and create PR                |
 | `work remote`                   | Open repository in browser                            |
-| `work cache-clear checkout`     | Clear autocomplete cache and checkout                 |
 | `work completion <shell>`       | Generate shell completion script                      |
 | `work git status`               | Show git status                                       |
 | `work git branch`               | List git branches                                     |
