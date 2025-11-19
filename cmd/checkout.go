@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/velvee-ai/ai-workflow/pkg/cache"
 	"github.com/velvee-ai/ai-workflow/pkg/config"
 )
 
@@ -513,9 +514,9 @@ func cloneRepository(gitURL, repoName, gitFolder string) error {
 	return nil
 }
 
-// listGitRepos returns a list of git repositories from local folder and GitHub orgs
+// listGitRepos returns a list of git repositories from local folder and persistent cache
 func listGitRepos() []string {
-	// Check if cache is still valid (with mutex protection)
+	// Check if in-memory cache is still valid (with mutex protection)
 	repoListCacheMutex.RLock()
 	if time.Since(repoListCacheTime) < repoListCacheTTL && len(repoListCache) > 0 {
 		cached := repoListCache
@@ -525,7 +526,6 @@ func listGitRepos() []string {
 	repoListCacheMutex.RUnlock()
 
 	repoMap := make(map[string]bool) // Use map to avoid duplicates
-	var repoMapMutex sync.Mutex
 	var repos []string
 
 	// 1. List local repositories from configured git folder
@@ -560,47 +560,18 @@ func listGitRepos() []string {
 		}
 	}
 
-	// 2. Fetch repositories from preferred GitHub organizations concurrently
-	preferredOrgs := config.GetStringSlice("preferred_orgs")
-
-	var wg sync.WaitGroup
-	for _, org := range preferredOrgs {
-		if org == "" {
-			continue
+	// 2. Load repositories from persistent cache (populated by 'work reload')
+	cachedRepos, err := cache.LoadRepoCache()
+	if err == nil && len(cachedRepos) > 0 {
+		for _, repoName := range cachedRepos {
+			if !repoMap[repoName] {
+				repoMap[repoName] = true
+				repos = append(repos, repoName)
+			}
 		}
-
-		wg.Add(1)
-		go func(organization string) {
-			defer wg.Done()
-
-			// Use gh CLI to list repos in the organization
-			// gh repo list <org> --limit 1000 --json name -q '.[].name'
-			cmd := exec.Command("gh", "repo", "list", organization, "--limit", "1000", "--json", "name", "-q", ".[].name")
-			output, err := cmd.Output()
-			if err != nil {
-				// Skip this org if gh command fails (not authenticated, org doesn't exist, etc.)
-				return
-			}
-
-			// Parse the output (one repo name per line)
-			lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-
-			repoMapMutex.Lock()
-			for _, line := range lines {
-				repoName := strings.TrimSpace(line)
-				if repoName != "" && !repoMap[repoName] {
-					repoMap[repoName] = true
-					repos = append(repos, repoName)
-				}
-			}
-			repoMapMutex.Unlock()
-		}(org)
 	}
 
-	// Wait for all goroutines to complete
-	wg.Wait()
-
-	// Update cache with mutex protection
+	// Update in-memory cache with mutex protection
 	repoListCacheMutex.Lock()
 	repoListCache = repos
 	repoListCacheTime = time.Now()
@@ -611,7 +582,7 @@ func listGitRepos() []string {
 
 // listBranchesForRepo returns a list of branches for a given repository
 func listBranchesForRepo(repoName string) []string {
-	// Check cache first (with mutex protection)
+	// Check in-memory cache first (with mutex protection)
 	branchListCacheMutex.RLock()
 	if entry, ok := branchListCache[repoName]; ok {
 		if time.Since(entry.fetchedAt) < branchListCacheTTL {
@@ -624,20 +595,20 @@ func listBranchesForRepo(repoName string) []string {
 
 	branches := []string{}
 
-	// Try GitHub API first (works even if not cloned locally)
-	ghBranches := listBranchesFromGitHub(repoName)
-	if len(ghBranches) > 0 {
-		// Update cache with mutex protection
+	// Try loading from persistent cache first (populated by 'work reload')
+	cachedBranches, err := cache.LoadBranchCache(repoName)
+	if err == nil && len(cachedBranches) > 0 {
+		// Update in-memory cache with mutex protection
 		branchListCacheMutex.Lock()
 		branchListCache[repoName] = branchCacheEntry{
-			branches:  ghBranches,
+			branches:  cachedBranches,
 			fetchedAt: time.Now(),
 		}
 		branchListCacheMutex.Unlock()
-		return ghBranches
+		return cachedBranches
 	}
 
-	// Fall back to local git repo
+	// Fall back to local git repo if not in cache
 	gitFolder := config.GetString("default_git_folder")
 	if gitFolder == "" {
 		return []string{}
@@ -686,7 +657,7 @@ func listBranchesForRepo(repoName string) []string {
 		}
 	}
 
-	// Update cache with local git results (with mutex protection)
+	// Update in-memory cache with local git results (with mutex protection)
 	if len(branches) > 0 {
 		branchListCacheMutex.Lock()
 		branchListCache[repoName] = branchCacheEntry{
@@ -697,70 +668,6 @@ func listBranchesForRepo(repoName string) []string {
 	}
 
 	return branches
-}
-
-// listBranchesFromGitHub fetches branches from GitHub using gh CLI, sorted by date
-func listBranchesFromGitHub(repoName string) []string {
-	preferredOrgs := config.GetStringSlice("preferred_orgs")
-
-	// Use a channel to collect results from concurrent queries
-	results := make(chan []string, len(preferredOrgs))
-	var wg sync.WaitGroup
-
-	for _, org := range preferredOrgs {
-		if org == "" {
-			continue
-		}
-
-		wg.Add(1)
-		go func(organization string) {
-			defer wg.Done()
-
-			// Use gh api to list branches sorted by last updated date
-			// We use a jq expression to sort by commit date and extract names
-			cmd := exec.Command("gh", "api", fmt.Sprintf("repos/%s/%s/branches", organization, repoName),
-				"--paginate",
-				"--jq", "sort_by(.commit.commit.committer.date) | reverse | .[].name")
-			output, err := cmd.Output()
-			if err != nil {
-				// Send empty result if this org fails
-				results <- []string{}
-				return
-			}
-
-			// Parse the output (one branch per line, already sorted by date)
-			branches := []string{}
-			lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-			for _, line := range lines {
-				branch := strings.TrimSpace(line)
-				if branch != "" {
-					branches = append(branches, branch)
-				}
-			}
-
-			results <- branches
-		}(org)
-	}
-
-	// Close results channel when all goroutines complete
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	// Return the first non-empty result
-	for branches := range results {
-		if len(branches) > 0 {
-			// Drain remaining results to avoid goroutine leaks
-			go func() {
-				for range results {
-				}
-			}()
-			return branches
-		}
-	}
-
-	return []string{}
 }
 
 // completeGitRepos is a completion function for git repositories and branches
