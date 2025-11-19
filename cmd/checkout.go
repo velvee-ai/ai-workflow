@@ -595,20 +595,20 @@ func listBranchesForRepo(repoName string) []string {
 
 	branches := []string{}
 
-	// Try loading from persistent cache first (populated by 'work reload')
-	cachedBranches, err := cache.LoadBranchCache(repoName)
-	if err == nil && len(cachedBranches) > 0 {
+	// Try GitHub API first (works even if not cloned locally)
+	ghBranches := listBranchesFromGitHub(repoName)
+	if len(ghBranches) > 0 {
 		// Update in-memory cache with mutex protection
 		branchListCacheMutex.Lock()
 		branchListCache[repoName] = branchCacheEntry{
-			branches:  cachedBranches,
+			branches:  ghBranches,
 			fetchedAt: time.Now(),
 		}
 		branchListCacheMutex.Unlock()
-		return cachedBranches
+		return ghBranches
 	}
 
-	// Fall back to local git repo if not in cache
+	// Fall back to local git repo
 	gitFolder := config.GetString("default_git_folder")
 	if gitFolder == "" {
 		return []string{}
@@ -668,6 +668,70 @@ func listBranchesForRepo(repoName string) []string {
 	}
 
 	return branches
+}
+
+// listBranchesFromGitHub fetches branches from GitHub using gh CLI, sorted by date
+func listBranchesFromGitHub(repoName string) []string {
+	preferredOrgs := config.GetStringSlice("preferred_orgs")
+
+	// Use a channel to collect results from concurrent queries
+	results := make(chan []string, len(preferredOrgs))
+	var wg sync.WaitGroup
+
+	for _, org := range preferredOrgs {
+		if org == "" {
+			continue
+		}
+
+		wg.Add(1)
+		go func(organization string) {
+			defer wg.Done()
+
+			// Use gh api to list branches sorted by last updated date
+			// We use a jq expression to sort by commit date and extract names
+			cmd := exec.Command("gh", "api", fmt.Sprintf("repos/%s/%s/branches", organization, repoName),
+				"--paginate",
+				"--jq", "sort_by(.commit.commit.committer.date) | reverse | .[].name")
+			output, err := cmd.Output()
+			if err != nil {
+				// Send empty result if this org fails
+				results <- []string{}
+				return
+			}
+
+			// Parse the output (one branch per line, already sorted by date)
+			branches := []string{}
+			lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+			for _, line := range lines {
+				branch := strings.TrimSpace(line)
+				if branch != "" {
+					branches = append(branches, branch)
+				}
+			}
+
+			results <- branches
+		}(org)
+	}
+
+	// Close results channel when all goroutines complete
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// Return the first non-empty result
+	for branches := range results {
+		if len(branches) > 0 {
+			// Drain remaining results to avoid goroutine leaks
+			go func() {
+				for range results {
+				}
+			}()
+			return branches
+		}
+	}
+
+	return []string{}
 }
 
 // completeGitRepos is a completion function for git repositories and branches

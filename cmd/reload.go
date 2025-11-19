@@ -14,38 +14,32 @@ import (
 
 var reloadCmd = &cobra.Command{
 	Use:   "reload",
-	Short: "Reload repository and branch data from GitHub into cache",
-	Long: `Fetch repository and branch information from GitHub and store it in the local cache.
+	Short: "Reload repository list from GitHub into cache",
+	Long: `Fetch repository names from GitHub and store them in the local cache.
 
 This command:
 1. Fetches all repositories from your configured GitHub organizations
-2. Fetches branch lists for each repository (in parallel)
-3. Stores everything in a local database for fast autocomplete
+2. Stores repository names in a local database for fast autocomplete
+
+Branches are fetched on-demand during tab completion from GitHub API.
 
 Run this command:
 - After adding new repositories to GitHub
-- After creating new branches you want to checkout
-- Periodically to keep your cache fresh
+- Periodically to keep your repository list fresh
 
 Example:
-  work reload
-  work reload --repos-only  # Only reload repository list`,
+  work reload`,
 	Run: runReload,
 }
 
-var (
-	reposOnly bool
-)
-
 func init() {
-	reloadCmd.Flags().BoolVar(&reposOnly, "repos-only", false, "Only reload repository list, skip branches")
 	rootCmd.AddCommand(reloadCmd)
 }
 
 func runReload(cmd *cobra.Command, args []string) {
-	fmt.Println("Reloading cache from GitHub...")
+	fmt.Println("Reloading repository cache from GitHub...")
 
-	// Step 1: Fetch repositories
+	// Fetch repositories
 	fmt.Println("\nFetching repositories...")
 	repos := fetchRepositoriesFromGitHub()
 	if len(repos) == 0 {
@@ -62,15 +56,9 @@ func runReload(cmd *cobra.Command, args []string) {
 
 	fmt.Printf("✓ Cached %d repositories\n", len(repos))
 
-	// Step 2: Fetch branches (unless --repos-only is set)
-	if !reposOnly {
-		fmt.Println("\nFetching branches for repositories...")
-		fetchBranchesForAllRepos(repos)
-	}
-
 	// Show cache stats
 	fmt.Println("\nCache updated successfully!")
-	showCacheStats()
+	fmt.Printf("\nNote: Branches are fetched on-demand from GitHub during tab completion.\n")
 }
 
 // fetchRepositoriesFromGitHub fetches all repositories from configured GitHub organizations
@@ -128,97 +116,3 @@ func fetchRepositoriesFromGitHub() []string {
 	return repos
 }
 
-// fetchBranchesForAllRepos fetches branches for all repositories in parallel
-func fetchBranchesForAllRepos(repos []string) {
-	var wg sync.WaitGroup
-	semaphore := make(chan struct{}, 10) // Limit to 10 concurrent requests
-
-	successCount := 0
-	var mu sync.Mutex
-
-	for _, repo := range repos {
-		wg.Add(1)
-		go func(repoName string) {
-			defer wg.Done()
-
-			// Acquire semaphore
-			semaphore <- struct{}{}
-			defer func() { <-semaphore }()
-
-			branches := fetchBranchesFromGitHub(repoName)
-			if len(branches) > 0 {
-				if err := cache.SaveBranchCache(repoName, branches); err != nil {
-					fmt.Fprintf(os.Stderr, "  Warning: Failed to cache branches for %s: %v\n", repoName, err)
-					return
-				}
-
-				mu.Lock()
-				successCount++
-				if successCount%10 == 0 {
-					fmt.Printf("  Cached branches for %d/%d repositories...\n", successCount, len(repos))
-				}
-				mu.Unlock()
-			}
-		}(repo)
-	}
-
-	wg.Wait()
-	fmt.Printf("✓ Cached branches for %d repositories\n", successCount)
-}
-
-// fetchBranchesFromGitHub fetches branches for a specific repository from GitHub
-func fetchBranchesFromGitHub(repoName string) []string {
-	preferredOrgs := config.GetStringSlice("preferred_orgs")
-
-	// Try each org until we find the repo
-	for _, org := range preferredOrgs {
-		if org == "" {
-			continue
-		}
-
-		// Use gh api to list branches sorted by last updated date
-		cmd := exec.Command("gh", "api", fmt.Sprintf("repos/%s/%s/branches", org, repoName),
-			"--paginate",
-			"--jq", "sort_by(.commit.commit.committer.date) | reverse | .[].name")
-		output, err := cmd.Output()
-		if err != nil {
-			continue // Try next org
-		}
-
-		// Parse output
-		var branches []string
-		lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-		for _, line := range lines {
-			branch := strings.TrimSpace(line)
-			if branch != "" {
-				branches = append(branches, branch)
-			}
-		}
-
-		if len(branches) > 0 {
-			return branches
-		}
-	}
-
-	return []string{}
-}
-
-// showCacheStats displays cache statistics
-func showCacheStats() {
-	stats, err := cache.GetCacheStats()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: Could not get cache stats: %v\n", err)
-		return
-	}
-
-	fmt.Println("\nCache Statistics:")
-	if count, ok := stats["repo_count"].(int); ok {
-		fmt.Printf("  Repositories: %d\n", count)
-	}
-	if count, ok := stats["cached_repos_with_branches"].(int); ok {
-		fmt.Printf("  Repos with branches: %d\n", count)
-	}
-	if size, ok := stats["db_size_bytes"].(int64); ok {
-		fmt.Printf("  Database size: %d KB\n", size/1024)
-	}
-}
