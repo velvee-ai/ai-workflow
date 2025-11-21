@@ -305,6 +305,51 @@ work completion powershell > work.ps1
 
 See `work completion --help` for detailed installation instructions for each shell.
 
+### Troubleshooting Completion
+
+If tab completion isn't working:
+
+**1. Verify completion data sources are available:**
+
+Completion requires repositories to complete from. Check if you have either:
+- GitHub CLI installed and configured: `gh auth status`
+- Local repos in your git folder: `ls $(work config get default_git_folder)`
+
+**2. Load repository cache:**
+
+```bash
+# Install and authenticate GitHub CLI first
+gh auth login
+
+# Configure your GitHub organizations
+work config set preferred_orgs '["your-org","another-org"]'
+
+# Load repos from GitHub into cache
+work reload
+```
+
+**3. Test completion manually:**
+
+```bash
+# Test repo completion
+work __complete "checkout" ""
+
+# Test branch completion
+work __complete "checkout" "repo-name" ""
+```
+
+If the above commands show results but tab completion still doesn't work, reinstall the completion script:
+
+```bash
+work completion zsh > "${fpath[1]}/_work"
+source ~/.zshrc
+```
+
+**Common issues:**
+- **No repos appear:** Run `work reload` after installing `gh` CLI and configuring preferred_orgs
+- **No branches appear:** Branches are fetched from GitHub API (requires `gh`) or from `git branch -r` in local repos
+- **Completion works in new shells only:** Add completion script installation to your `.zshrc` or equivalent
+
 ## Adding New Commands
 
 Cobra makes it easy to add new commands:
