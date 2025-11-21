@@ -83,17 +83,20 @@ brew install work
 work --version
 ```
 
-Note: Pre-built binaries are currently only available for macOS through Homebrew. For Linux and Windows users, please build from source (see below).
+**Note:** Pre-built binaries are currently only available for macOS through Homebrew. For Linux and Windows users, please build from source (see below).
+
+**Windows users:** This tool requires WSL (Windows Subsystem for Linux). Install WSL by following [Microsoft's guide](https://learn.microsoft.com/en-us/windows/wsl/install).
 
 ### Build from Source
 
-Supports **macOS**, **Linux**, and **Windows**.
+Supports **macOS**, **Linux**, and **Windows** (via WSL).
 
 **Prerequisites:**
 
 - Go 1.21 or later
 - Git (for git commands and checkout workflow)
 - GitHub CLI (`gh`) - Optional, required for GitHub issue integration and PR creation
+- **Windows users**: WSL (Windows Subsystem for Linux) is required
 
 ```bash
 # Clone the repository
@@ -557,7 +560,7 @@ This project uses [GoReleaser](https://goreleaser.com/) for automated releases t
    ```
 
 2. GitHub Actions automatically:
-   - Builds binaries for macOS, Linux, and Windows (Intel & ARM)
+   - Builds binaries for macOS, Linux, and Windows/WSL (Intel & ARM)
    - Creates a GitHub Release
    - Updates the Homebrew tap
 

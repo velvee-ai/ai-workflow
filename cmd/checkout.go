@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"sync"
 
@@ -868,24 +867,13 @@ func runPostCheckoutActions(worktreePath string) {
 		// Script exists, run it using the user's default shell
 		fmt.Printf("Running .work/post_checkout.sh…\n")
 
-		// Get the user's shell from SHELL environment variable
+		// Get the user's shell from SHELL environment variable, default to sh if not set
 		shell := os.Getenv("SHELL")
 		if shell == "" {
-			// Default shell based on OS
-			if runtime.GOOS == "windows" {
-				shell = "cmd.exe"
-			} else {
-				shell = "/bin/sh"
-			}
+			shell = "/bin/sh"
 		}
 
-		var cmd *exec.Cmd
-		if runtime.GOOS == "windows" {
-			// On Windows, use cmd.exe /c to execute the script
-			cmd = exec.Command(shell, "/c", scriptPath)
-		} else {
-			cmd = exec.Command(shell, scriptPath)
-		}
+		cmd := exec.Command(shell, scriptPath)
 		cmd.Dir = worktreePath
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr

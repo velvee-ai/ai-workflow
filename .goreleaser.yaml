@@ -137,6 +137,8 @@ release:
     ### Manual Installation (Linux/Windows)
     Download the appropriate archive for your system below and extract the binary.
 
+    **Windows users:** Requires WSL (Windows Subsystem for Linux). Install from the Microsoft Store or run `wsl --install` in PowerShell.
+
 # Announce (optional - can add Discord/Slack/Twitter notifications)
 # announce:
 #   discord:
