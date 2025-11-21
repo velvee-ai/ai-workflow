@@ -22,9 +22,11 @@ builds:
       - CGO_ENABLED=0
     goos:
       - darwin
+      - linux
+      - windows
     goarch:
-      - amd64  # Intel Macs
-      - arm64  # Apple Silicon (M1/M2/M3)
+      - amd64  # Intel/AMD 64-bit
+      - arm64  # ARM 64-bit (Apple Silicon, ARM servers)
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
@@ -132,8 +134,10 @@ release:
     brew install work
     ```
 
-    ### Manual Installation
-    Download the appropriate archive for your system below.
+    ### Manual Installation (Linux/Windows)
+    Download the appropriate archive for your system below and extract the binary.
+
+    **Windows users:** Requires WSL (Windows Subsystem for Linux). Install from the Microsoft Store or run `wsl --install` in PowerShell.
 
 # Announce (optional - can add Discord/Slack/Twitter notifications)
 # announce:

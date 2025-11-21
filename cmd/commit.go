@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -123,9 +125,8 @@ func pushWithRetry(branch string) error {
 				delay := delays[attempt]
 				fmt.Printf("Push failed, retrying in %d seconds... (attempt %d/%d)\n", delay, attempt+1, maxRetries+1)
 
-				// Sleep for the delay
-				sleepCmd := exec.Command("sleep", fmt.Sprintf("%d", delay))
-				sleepCmd.Run()
+				// Sleep for the delay (cross-platform)
+				time.Sleep(time.Duration(delay) * time.Second)
 				continue
 			}
 		}
@@ -161,14 +162,16 @@ func createPullRequest(branch string, commitMessage string) error {
 	// Create PR body with summary of commits
 	prBody := fmt.Sprintf("## Summary\n\n%s\n\n## Commits\n```\n%s\n```", commitMessage, commits)
 
-	// Create the PR using gh CLI with heredoc for body
-	// Using bash to handle heredoc properly
-	bashScript := fmt.Sprintf(`gh pr create --title "%s" --body "$(cat <<'EOF'
-%s
-EOF
-)"`, prTitle, prBody)
+	// Write PR body to a temporary file (cross-platform approach)
+	tempDir := os.TempDir()
+	bodyFile := filepath.Join(tempDir, fmt.Sprintf("pr-body-%d.txt", os.Getpid()))
+	if err := os.WriteFile(bodyFile, []byte(prBody), 0644); err != nil {
+		return fmt.Errorf("failed to write PR body file: %w", err)
+	}
+	defer os.Remove(bodyFile)
 
-	prCmd := exec.Command("bash", "-c", bashScript)
+	// Create the PR using gh CLI with body from file
+	prCmd := exec.Command("gh", "pr", "create", "--title", prTitle, "--body-file", bodyFile)
 	prCmd.Stdout = os.Stdout
 	prCmd.Stderr = os.Stderr
 	prCmd.Stdin = os.Stdin

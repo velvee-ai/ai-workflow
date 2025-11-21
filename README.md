@@ -70,7 +70,7 @@ Services are lazily initialized and include:
 
 ## Installation
 
-### Homebrew (macOS - Recommended)
+### Homebrew (macOS)
 
 ```bash
 # Add the tap
@@ -83,13 +83,20 @@ brew install work
 work --version
 ```
 
+**Note:** Pre-built binaries are currently only available for macOS through Homebrew. For Linux and Windows users, please build from source (see below).
+
+**Windows users:** This tool requires WSL (Windows Subsystem for Linux). Install WSL by following [Microsoft's guide](https://learn.microsoft.com/en-us/windows/wsl/install).
+
 ### Build from Source
+
+Supports **macOS**, **Linux**, and **Windows** (via WSL).
 
 **Prerequisites:**
 
 - Go 1.21 or later
 - Git (for git commands and checkout workflow)
 - GitHub CLI (`gh`) - Optional, required for GitHub issue integration and PR creation
+- **Windows users**: WSL (Windows Subsystem for Linux) is required
 
 ```bash
 # Clone the repository
@@ -545,17 +552,30 @@ This project uses [GoReleaser](https://goreleaser.com/) for automated releases t
 
 ### Creating a Release
 
-1. Create and push a version tag:
+**Option 1: Manual Release (Recommended)**
 
-   ```bash
-   git tag -a v1.0.0 -m "Release v1.0.0"
-   git push origin v1.0.0
-   ```
+1. Go to the GitHub Actions tab in your repository
+2. Select "Manual Release" workflow
+3. Click "Run workflow"
+4. Enter the version (e.g., `v1.0.0`) and optional release notes
+5. Click "Run workflow" to start
 
-2. GitHub Actions automatically:
-   - Builds binaries for macOS (Intel & Apple Silicon)
-   - Creates a GitHub Release
-   - Updates the Homebrew tap
+The workflow will automatically:
+- Create and push the version tag
+- Build binaries for macOS, Linux, and Windows/WSL (Intel & ARM)
+- Create a GitHub Release with assets
+- Update the Homebrew tap
+
+**Option 2: Tag-based Release**
+
+Alternatively, you can trigger a release by pushing a tag:
+
+```bash
+git tag -a v1.0.0 -m "Release v1.0.0"
+git push origin v1.0.0
+```
+
+This will trigger the automatic release workflow.
 
 See [RELEASE.md](RELEASE.md) for detailed release instructions.
 
