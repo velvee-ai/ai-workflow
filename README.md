@@ -552,17 +552,30 @@ This project uses [GoReleaser](https://goreleaser.com/) for automated releases t
 
 ### Creating a Release
 
-1. Create and push a version tag:
+**Option 1: Manual Release (Recommended)**
 
-   ```bash
-   git tag -a v1.0.0 -m "Release v1.0.0"
-   git push origin v1.0.0
-   ```
+1. Go to the GitHub Actions tab in your repository
+2. Select "Manual Release" workflow
+3. Click "Run workflow"
+4. Enter the version (e.g., `v1.0.0`) and optional release notes
+5. Click "Run workflow" to start
 
-2. GitHub Actions automatically:
-   - Builds binaries for macOS, Linux, and Windows/WSL (Intel & ARM)
-   - Creates a GitHub Release
-   - Updates the Homebrew tap
+The workflow will automatically:
+- Create and push the version tag
+- Build binaries for macOS, Linux, and Windows/WSL (Intel & ARM)
+- Create a GitHub Release with assets
+- Update the Homebrew tap
+
+**Option 2: Tag-based Release**
+
+Alternatively, you can trigger a release by pushing a tag:
+
+```bash
+git tag -a v1.0.0 -m "Release v1.0.0"
+git push origin v1.0.0
+```
+
+This will trigger the automatic release workflow.
 
 See [RELEASE.md](RELEASE.md) for detailed release instructions.
 
