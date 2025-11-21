@@ -287,7 +287,8 @@ func runDoctor(cmd *cobra.Command, args []string) {
 				command = ide
 			}
 
-			if err := exec.Command("which", command).Run(); err != nil {
+			// Check if command exists in PATH (cross-platform)
+			if _, err := exec.LookPath(command); err != nil {
 				result.status = fmt.Sprintf("⚠ %s command not found (set to '%s')", command, ide)
 				result.details = []string{"IDE won't auto-open but checkout will still work"}
 			} else {

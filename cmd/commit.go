@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -123,9 +124,8 @@ func pushWithRetry(branch string) error {
 				delay := delays[attempt]
 				fmt.Printf("Push failed, retrying in %d seconds... (attempt %d/%d)\n", delay, attempt+1, maxRetries+1)
 
-				// Sleep for the delay
-				sleepCmd := exec.Command("sleep", fmt.Sprintf("%d", delay))
-				sleepCmd.Run()
+				// Sleep for the delay (cross-platform)
+				time.Sleep(time.Duration(delay) * time.Second)
 				continue
 			}
 		}

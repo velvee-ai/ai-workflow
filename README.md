@@ -70,7 +70,7 @@ Services are lazily initialized and include:
 
 ## Installation
 
-### Homebrew (macOS - Recommended)
+### Homebrew (macOS)
 
 ```bash
 # Add the tap
@@ -83,7 +83,11 @@ brew install work
 work --version
 ```
 
+Note: Pre-built binaries are currently only available for macOS through Homebrew. For Linux and Windows users, please build from source (see below).
+
 ### Build from Source
+
+Supports **macOS**, **Linux**, and **Windows**.
 
 **Prerequisites:**
 
@@ -553,7 +557,7 @@ This project uses [GoReleaser](https://goreleaser.com/) for automated releases t
    ```
 
 2. GitHub Actions automatically:
-   - Builds binaries for macOS (Intel & Apple Silicon)
+   - Builds binaries for macOS, Linux, and Windows (Intel & ARM)
    - Creates a GitHub Release
    - Updates the Homebrew tap
 
