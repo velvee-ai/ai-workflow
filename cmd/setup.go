@@ -384,6 +384,23 @@ func runDoctor(cmd *cobra.Command, args []string) {
 			orgAccessResult.status = "⚠ Cannot access configured orgs (may need valid org names)"
 		}
 		results <- orgAccessResult
+
+		// Webhook scope check — needed for 'work sync <repo>' to create
+		// GitHub webhooks. Either `repo` or `admin:repo_hook` is enough.
+		scopeResult := checkResult{name: "gh webhook scope", order: 2, critical: false}
+		scopes := parseGhScopes(outputStr)
+		if len(scopes) == 0 {
+			scopeResult.status = "⚠ Could not read token scopes"
+		} else if ghHasWebhookScope(scopes) {
+			scopeResult.status = "✓ (token has repo or admin:repo_hook)"
+		} else {
+			scopeResult.status = "⚠ MISSING"
+			scopeResult.details = []string{
+				"Needed for 'work sync <repo>' to install GitHub webhooks.",
+				"Run: gh auth refresh -s admin:repo_hook",
+			}
+		}
+		results <- scopeResult
 	}()
 
 	// Close results channel when all checks complete
@@ -434,6 +451,39 @@ func runDoctor(cmd *cobra.Command, args []string) {
 		fmt.Println("Fix the issues above, then run 'work doctor' again")
 	}
 	fmt.Println("========================")
+}
+
+// parseGhScopes extracts OAuth scopes from `gh auth status` output, which
+// contains a line like: "  - Token scopes: 'repo', 'read:org', ..."
+func parseGhScopes(ghAuthStatusOutput string) []string {
+	for _, line := range strings.Split(ghAuthStatusOutput, "\n") {
+		line = strings.TrimSpace(line)
+		raw, ok := strings.CutPrefix(line, "- Token scopes:")
+		if !ok {
+			continue
+		}
+		var scopes []string
+		for _, s := range strings.Split(raw, ",") {
+			s = strings.TrimSpace(s)
+			s = strings.Trim(s, "'\"")
+			if s != "" {
+				scopes = append(scopes, s)
+			}
+		}
+		return scopes
+	}
+	return nil
+}
+
+// ghHasWebhookScope returns true if the token has a scope sufficient to
+// create a repo webhook. `repo` (classic PAT) or `admin:repo_hook` both work.
+func ghHasWebhookScope(scopes []string) bool {
+	for _, s := range scopes {
+		if s == "repo" || s == "admin:repo_hook" || s == "write:repo_hook" {
+			return true
+		}
+	}
+	return false
 }
 
 func init() {
