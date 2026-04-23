@@ -103,7 +103,7 @@ func runSetup(cmd *cobra.Command, args []string) {
 		huh.NewGroup(
 			huh.NewSelect[string]().
 				Title("Preferred IDE").
-				Description("Choose your preferred editor to auto-open after checkout").
+				Description("Choose your preferred editor to auto-open after checkout. (Note: other editors can be set via 'work config set preferred_ide <command>')").
 				Options(
 					huh.NewOption("Visual Studio Code", "vscode"),
 					huh.NewOption("Cursor Editor", "cursor"),
@@ -201,12 +201,12 @@ func runDoctor(cmd *cobra.Command, args []string) {
 
 	// Run checks concurrently where possible
 	type checkResult struct {
-		name        string
-		status      string
-		details     []string
-		critical    bool
-		failed      bool
-		order       int
+		name     string
+		status   string
+		details  []string
+		critical bool
+		failed   bool
+		order    int
 	}
 
 	results := make(chan checkResult, 5)

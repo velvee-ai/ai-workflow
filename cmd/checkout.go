@@ -282,22 +282,72 @@ func runCheckoutBranch(cmd *cobra.Command, args []string) {
 	var gitRoot, containerRoot string
 
 	// Determine if we're in a git repo or container folder
-	if isInsideGitRepo() {
-		// We're inside a git repo (branch folder)
-		var err error
-		gitRoot, err = getGitRoot()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+	isRepoURL := isGitHubIssueURL(arg)
+	var repoName string
+	if isRepoURL {
+		repoName = extractRepoFromIssueURL(arg)
+		if repoName != "" {
+			gitFolder := config.GetString("default_git_folder")
+			if gitFolder != "" {
+				// Expand home directory if needed
+				if strings.HasPrefix(gitFolder, "~/") {
+					homeDir, _ := os.UserHomeDir()
+					gitFolder = filepath.Join(homeDir, gitFolder[2:])
+				}
+				containerRoot = filepath.Join(gitFolder, repoName)
+				gitRoot = filepath.Join(containerRoot, "main")
+
+				// Check if repo exists, if not, we'll try to clone it via checkoutRepoBranch logic or fallback
+				// For now, let's just ensure we have the paths.
+				// If gitRoot doesn't exist, we can't Chdir to it yet, but checkoutRepoBranch handles cloning.
+				// Wait, runCheckoutBranch performs its own Chdir and git operations.
+				// Let's align runCheckoutBranch to use the same logic as checkoutRepoBranch.
+			}
+		}
+	}
+
+	if gitRoot == "" {
+		if isInsideGitRepo() {
+			// We're inside a git repo (branch folder)
+			var err error
+			gitRoot, err = getGitRoot()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			containerRoot = filepath.Dir(gitRoot)
+		} else if _, err := os.Stat("main/.git"); err == nil {
+			// We're in container folder with main subfolder
+			containerRoot, _ = os.Getwd()
+			gitRoot = filepath.Join(containerRoot, "main")
+		} else {
+			fmt.Fprintf(os.Stderr, "Error: Not in a git repo or container folder with main subfolder\n")
 			os.Exit(1)
 		}
-		containerRoot = filepath.Dir(gitRoot)
-	} else if _, err := os.Stat("main/.git"); err == nil {
-		// We're in container folder with main subfolder
-		containerRoot, _ = os.Getwd()
-		gitRoot = filepath.Join(containerRoot, "main")
-	} else {
-		fmt.Fprintf(os.Stderr, "Error: Not in a git repo or container folder with main subfolder\n")
-		os.Exit(1)
+	}
+
+	// If it's an issue URL, we might need to clone or ensure it exists
+	if isRepoURL && repoName != "" {
+		if _, err := os.Stat(gitRoot); os.IsNotExist(err) {
+			fmt.Printf("Repository '%s' not found locally, attempting to clone...\n", repoName)
+			gitFolder := config.GetString("default_git_folder")
+			// Expand home directory if needed
+			if strings.HasPrefix(gitFolder, "~/") {
+				homeDir, _ := os.UserHomeDir()
+				gitFolder = filepath.Join(homeDir, gitFolder[2:])
+			}
+
+			cloneURL := getRepoCloneURL(repoName)
+			if cloneURL == "" {
+				fmt.Fprintf(os.Stderr, "Error: Could not find repository '%s' in configured orgs\n", repoName)
+				os.Exit(1)
+			}
+
+			if err := cloneRepository(cloneURL, repoName, gitFolder); err != nil {
+				fmt.Fprintf(os.Stderr, "Error cloning repository: %v\n", err)
+				os.Exit(1)
+			}
+		}
 	}
 
 	// Change to git root for operations
@@ -756,6 +806,15 @@ func isGitHubIssueURL(url string) bool {
 	return matched
 }
 
+func extractRepoFromIssueURL(url string) string {
+	// https://github.com/user/repo/issues/123
+	parts := strings.Split(url, "/")
+	if len(parts) >= 5 {
+		return parts[4]
+	}
+	return ""
+}
+
 func handleGitHubIssue(issueURL string) string {
 	// Extract issue number
 	parts := strings.Split(issueURL, "/")
@@ -845,8 +904,8 @@ func openInIDE(path string) {
 	case "cursor":
 		command = "cursor"
 	default:
-		// Unknown IDE, skip silently
-		return
+		// Use the value directly as the command for other IDEs
+		command = preferredIDE
 	}
 
 	// Try to open in the configured IDE (optional, don't fail if not available)
