@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 
@@ -170,15 +169,23 @@ func checkoutRepoBranch(repoName, branchName string) {
 		os.Exit(1)
 	}
 
-	// Switch to default branch and pull latest
+	// Sync the 'main' folder as our source of truth for the base branch
 	defaultBranch := getDefaultBranch(gitRoot)
-	if err := runGitCommand("switch", defaultBranch); err != nil {
-		fmt.Fprintf(os.Stderr, "Error switching to %s: %v\n", defaultBranch, err)
-		os.Exit(1)
+	fmt.Printf("Syncing main branch in %s...\n", repoName)
+	syncCmd := exec.Command("git", "switch", defaultBranch)
+	syncCmd.Dir = gitRoot
+	if err := syncCmd.Run(); err != nil {
+		// If switch fails, it might be because it's already on it or has changes
+		if actualBranch := getCurrentBranch(gitRoot); actualBranch != defaultBranch {
+			fmt.Fprintf(os.Stderr, "Error: Could not switch main worktree to %s: %v\n", defaultBranch, err)
+			os.Exit(1)
+		}
 	}
 
-	if err := runGitCommand("pull", "--rebase"); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: Could not pull latest changes: %v\n", err)
+	pullCmd := exec.Command("git", "pull", "--rebase")
+	pullCmd.Dir = gitRoot
+	if err := pullCmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Could not pull latest changes in main: %v\n", err)
 	}
 
 	// Create worktree path
@@ -306,19 +313,35 @@ func runCheckoutBranch(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	// Switch to default branch and pull latest
+	// Sync the 'main' folder as our source of truth for the base branch
 	defaultBranch := getDefaultBranch(gitRoot)
-	if err := runGitCommand("switch", defaultBranch); err != nil {
-		fmt.Fprintf(os.Stderr, "Error switching to %s: %v\n", defaultBranch, err)
-		os.Exit(1)
+	syncCmd := exec.Command("git", "switch", defaultBranch)
+	syncCmd.Dir = gitRoot
+	if err := syncCmd.Run(); err != nil {
+		if actualBranch := getCurrentBranch(gitRoot); actualBranch != defaultBranch {
+			fmt.Fprintf(os.Stderr, "Error: Could not switch main worktree to %s: %v\n", defaultBranch, err)
+			os.Exit(1)
+		}
 	}
 
-	if err := runGitCommand("pull", "--rebase"); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: Could not pull latest changes: %v\n", err)
+	pullCmd := exec.Command("git", "pull", "--rebase")
+	pullCmd.Dir = gitRoot
+	if err := pullCmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Could not pull latest changes in main: %v\n", err)
 	}
 
 	// Handle GitHub issue URL vs regular branch name
 	if isGitHubIssueURL(arg) {
+		_, repo, _, err := parseGitHubIssueURL(arg)
+		if err == nil {
+			// If the issue belongs to a different repo, delegate to checkoutRepoBranch
+			currentRepo := filepath.Base(containerRoot)
+			if repo != currentRepo {
+				fmt.Printf("Issue belongs to repository '%s'. Switching context...\n", repo)
+				checkoutRepoBranch(repo, arg)
+				return // checkoutRepoBranch handles everything
+			}
+		}
 		branchName = handleGitHubIssue(arg)
 	} else {
 		branchName = arg
@@ -750,10 +773,22 @@ func getGitRoot() (string, error) {
 }
 
 func isGitHubIssueURL(url string) bool {
+	_, _, _, err := parseGitHubIssueURL(url)
+	return err == nil
+}
+
+func parseGitHubIssueURL(issueURL string) (owner, repo, issueNumber string, err error) {
 	// Match: https://github.com/user/repo/issues/123
-	pattern := `^https://github\.com/.+/.+/issues/\d+$`
-	matched, _ := regexp.MatchString(pattern, url)
-	return matched
+	// Also match: github.com/user/repo/issues/123
+	url := strings.TrimPrefix(issueURL, "https://")
+	url = strings.TrimPrefix(url, "http://")
+
+	parts := strings.Split(url, "/")
+	if len(parts) < 5 || parts[0] != "github.com" || parts[3] != "issues" {
+		return "", "", "", fmt.Errorf("invalid github issue URL")
+	}
+
+	return parts[1], parts[2], parts[4], nil
 }
 
 func handleGitHubIssue(issueURL string) string {
