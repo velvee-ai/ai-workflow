@@ -13,19 +13,29 @@ import (
 	"github.com/velvee-ai/ai-workflow/pkg/services"
 )
 
+var (
+	syncOff  bool
+	syncOnce bool
+)
+
 var syncCmd = &cobra.Command{
 	Use:   "sync [repo]",
-	Short: "Sync default branch across repositories",
-	Long: `Sync the default branch (main/master) across all repositories or a specific repository.
+	Short: "Sync default branch and (for a single repo) enable auto-sync",
+	Long: `Sync the default branch (main/master) across your repositories.
 
-This command helps keep your default branches up-to-date by:
-  - Switching to the default branch in the main worktree
-  - Pulling the latest changes with rebase
-  - Reporting any errors or conflicts
+Without arguments: pull --rebase on every discovered repo (one-shot).
+
+With a repo argument: full auto-sync setup (idempotent) — creates a
+smee.io channel if needed, installs a GitHub push webhook on the repo,
+starts the launchd listener daemon, and then pulls --rebase once.
+After the first run, further pushes to the default branch sync
+automatically in the background.
 
 Examples:
-  work sync              # Sync all repositories
-  work sync ai-workflow  # Sync specific repository`,
+  work sync                     # One-shot sync of every repo
+  work sync ai-workflow         # Full auto-sync setup + pull for one repo
+  work sync ai-workflow --once  # Skip setup, just pull once
+  work sync ai-workflow --off   # Remove the GitHub webhook for this repo`,
 	ValidArgsFunction: completeReposForSync,
 	Run:               runSync,
 }
@@ -40,6 +50,68 @@ type SyncResult struct {
 }
 
 func runSync(cmd *cobra.Command, args []string) {
+	if syncOff {
+		runSyncDisable(cmd, args)
+		return
+	}
+	if len(args) > 0 && !syncOnce {
+		runSyncEnable(cmd, args[0])
+		return
+	}
+	runSyncPullOnly(cmd, args)
+}
+
+// runSyncEnable is the "do it all" path for a single repo: ensure smee
+// channel + GitHub webhook + launchd daemon, then pull once.
+func runSyncEnable(cmd *cobra.Command, repoName string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	gitFolder := resolvedGitFolder()
+	if gitFolder == "" {
+		fmt.Fprintln(os.Stderr, "Error: default_git_folder is not configured or does not exist")
+		fmt.Fprintln(os.Stderr, "Run: work setup")
+		os.Exit(1)
+	}
+
+	localPath, err := enableAutoSync(ctx, gitFolder, repoName)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	result := syncRepository(ctx, localPath)
+	if result.Success {
+		fmt.Printf("✓ %s (%s): %s\n", result.RepoName, result.DefaultBranch, result.Message)
+		return
+	}
+	fmt.Fprintf(os.Stderr, "✗ %s: %s\n", result.RepoName, result.Error.Error())
+	os.Exit(1)
+}
+
+// runSyncDisable removes the webhook for a single repo.
+func runSyncDisable(cmd *cobra.Command, args []string) {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "Error: --off requires a repo name")
+		fmt.Fprintln(os.Stderr, "Example: work sync ai-workflow --off")
+		os.Exit(1)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	gitFolder := resolvedGitFolder()
+	if gitFolder == "" {
+		fmt.Fprintln(os.Stderr, "Error: default_git_folder is not configured or does not exist")
+		os.Exit(1)
+	}
+	if err := disableAutoSync(ctx, gitFolder, args[0]); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// runSyncPullOnly is the classic sync-all (and `--once <repo>`) path.
+func runSyncPullOnly(cmd *cobra.Command, args []string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -250,5 +322,7 @@ func completeReposForSync(cmd *cobra.Command, args []string, toComplete string) 
 }
 
 func init() {
+	syncCmd.Flags().BoolVar(&syncOff, "off", false, "Remove the GitHub webhook for this repo (requires a repo name)")
+	syncCmd.Flags().BoolVar(&syncOnce, "once", false, "Skip webhook and daemon setup; just pull --rebase once")
 	rootCmd.AddCommand(syncCmd)
 }

@@ -16,6 +16,7 @@ type Config struct {
 	PreferredIDE       string   `mapstructure:"preferred_ide" json:"preferred_ide"`
 	CheckoutBaseBranch string   `mapstructure:"checkout_base_branch" json:"checkout_base_branch"`
 	CacheTTL           string   `mapstructure:"cache_ttl" json:"cache_ttl"` // Duration string like "5m"
+	SmeeChannelURL     string   `mapstructure:"smee_channel_url" json:"smee_channel_url"`
 }
 
 var (
@@ -118,6 +119,7 @@ func Save(cfg *Config) error {
 	viper.Set("preferred_ide", cfg.PreferredIDE)
 	viper.Set("checkout_base_branch", cfg.CheckoutBaseBranch)
 	viper.Set("cache_ttl", cfg.CacheTTL)
+	viper.Set("smee_channel_url", cfg.SmeeChannelURL)
 
 	return viper.WriteConfig()
 }
