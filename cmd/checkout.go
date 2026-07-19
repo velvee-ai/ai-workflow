@@ -204,7 +204,7 @@ func checkoutRepoBranch(repoName, branchName string) {
 		}
 	} else {
 		// Create new worktree
-		if err := runGitCommand("worktree", "add", worktreePath, branchName); err != nil {
+		if err := addWorktree(worktreePath, branchName, defaultBranch); err != nil {
 			fmt.Fprintf(os.Stderr, "Error creating worktree: %v\n", err)
 			os.Exit(1)
 		}
@@ -347,7 +347,7 @@ func runCheckoutBranch(cmd *cobra.Command, args []string) {
 		}
 	} else {
 		// Create new worktree
-		if err := runGitCommand("worktree", "add", worktreePath, branchName); err != nil {
+		if err := addWorktree(worktreePath, branchName, defaultBranch); err != nil {
 			fmt.Fprintf(os.Stderr, "Error creating worktree: %v\n", err)
 			os.Exit(1)
 		}
@@ -814,6 +814,28 @@ func handleGitHubIssue(issueURL string) string {
 func branchExistsLocally(branch string) bool {
 	cmd := exec.Command("git", "show-ref", "--verify", "--quiet", "refs/heads/"+branch)
 	return cmd.Run() == nil
+}
+
+func branchExistsOnRemote(branch string) bool {
+	cmd := exec.Command("git", "show-ref", "--verify", "--quiet", "refs/remotes/origin/"+branch)
+	return cmd.Run() == nil
+}
+
+// addWorktree creates a worktree for branchName at worktreePath.
+//
+// "git worktree add <path> <branch>" requires branch to already exist and fails
+// with "fatal: invalid reference" otherwise, which meant a brand new branch
+// could only be checked out by creating it on GitHub first. When the branch
+// exists nowhere yet, create it locally from baseBranch instead.
+func addWorktree(worktreePath, branchName, baseBranch string) error {
+	switch {
+	case branchExistsLocally(branchName):
+		return runGitCommand("worktree", "add", worktreePath, branchName)
+	case branchExistsOnRemote(branchName):
+		return runGitCommand("worktree", "add", "--track", "-b", branchName, worktreePath, "origin/"+branchName)
+	default:
+		return runGitCommand("worktree", "add", "-b", branchName, worktreePath, baseBranch)
+	}
 }
 
 func isGitWorktree(path string) bool {
